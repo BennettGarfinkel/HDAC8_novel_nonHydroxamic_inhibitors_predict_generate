@@ -102,13 +102,6 @@ Model performance (scaffold-grouped CV R²): HDAC8 IC50 0.54, HDAC8 docking 0.43
 IC50 0.51, HDAC6 IC50 0.50. HDAC1/HDAC6 docking models are modest (0.13/0.15) due to
 small training sets with high scaffold diversity — treat as directional, not precise.
 
-## Results (current run)
-
-291 total docking-gated hits across 8 of 9 ZBG lineages (Triazoloquinoline has zero
-seeds). The strict all-constraints screen (no PAINS/Brenk, Lipinski/Veber, SA ≤ 3.5,
-HDAC8 dock ≤ -7, HDAC1/HDAC6 dock > -7, IC50 ≤ 500 nM) yields **6 clean candidates**
-(5 Carboxylate, 1 Triazolopyridine). Each output CSV tracks MW, cLogP, HBD, HBA, TPSA,
-RotB, both off-target IC50/docking predictions, and the `passes_ic50_selectivity` flag.
 
 ## Output columns
 
