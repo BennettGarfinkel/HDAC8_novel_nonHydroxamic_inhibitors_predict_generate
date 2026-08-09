@@ -1,26 +1,26 @@
 # hHDAC8 Non-Hydroxamate Inhibitor Discovery Pipeline
 
-Computational drug discovery pipeline for identifying potent, drug-like, isoform-selective
-non-hydroxamate inhibitors of human HDAC8 (hHDAC8), using ML-driven QSAR/docking-score
-prediction and genetic-algorithm-based generative chemistry with built-in docking-score
-selectivity for HDAC8 over HDAC1/HDAC6. 
+Computational drug discovery pipeline for finding potent, drug-like, isoform-selective
+non-hydroxamate inhibitors of human HDAC8 (hHDAC8). It combines ML-based QSAR/docking-score
+prediction with genetic-algorithm generative chemistry, with docking-based selectivity over
+HDAC1/HDAC6 built in from the start.
 
 ## Project constraints and goals
 
-- **Hard constraint: no hydroxamic acid zinc-binding groups (ZBGs).** All other
-  non-hydroxamate ZBG chemotypes are open for exploration.
-- **Goal:** identify candidate molecules with real potency (target ≤150-500 nM depending
-  on triage stage), acceptable drug-likeness (Lipinski/Veber), synthetic accessibility,
-  no reactive/toxic liabilities, and evidence of HDAC8 selectivity over HDAC1/HDAC6 —
-  both by predicted IC50 and by predicted docking score.
-- **Therapeutic rationale:** HDAC8-selective inhibition avoids the toxicity profile of
-  pan-HDAC inhibitors; relevant to pediatric T-cell ALL, neuroblastoma, Cornelia de Lange
-  syndrome (SMC3/cohesin deacetylation), and antiparasitic applications.
+- **Hard constraint: no hydroxamic acid zinc-binding groups (ZBGs).** Most other
+  non-hydroxamate ZBG chemotype are fine.
+- **Goal:** find candidates with real potency (aiming for ≤150–500 nM depending on how
+  strict the triage stage is), acceptable drug-likeness (Lipinski/Veber), synthetic
+  accessibility, no reactive/toxic liabilities, and evidence of HDAC8 selectivity over
+  HDAC1/HDAC6 — both in predicted IC50 and in predicted docking score.
+- **Why this matters:** HDAC8-selective inhibition avoids the toxicity that comes with
+  pan-HDAC inhibitors, and is relevant to pediatric T-cell ALL, neuroblastoma, Cornelia
+  de Lange syndrome (SMC3/cohesin deacetylation), and antiparasitic applications.
 
 ## Architecture
 
-Cap–linker–ZBG (L-shaped) design paradigm. Key PDB
-structures: 1T64 (HDAC8), 4BKX (HDAC1), 5EEM (HDAC6 CD2).
+Cap–linker–ZBG (L-shaped) design paradigm. Key PDB structures: 1T64 (HDAC8), 4BKX
+(HDAC1), 5EEM (HDAC6 CD2).
 
 ## Pipeline components
 
@@ -39,36 +39,38 @@ structures: 1T64 (HDAC8), 4BKX (HDAC1), 5EEM (HDAC6 CD2).
 | `figures/*.png` | Nine diagnostic visualizations (fig1–fig9) |
 
 A fresh `run_docking_selective.py` / `make_figures.py` run always writes to top-level
-`candidates/` and `figures/` (created if missing). Once a run has been reviewed (and,
-ideally, spot-checked against real docking as in `Run 1/Run1.md`), its `candidates/`
-and `figures/` output is manually archived into a numbered `Run N/` folder (`Run N
+`candidates/` and `figures/` (created if they don't exist yet). Once I've reviewed a run
+— and ideally spot-checked it against real docking, like in `Run 1/Run1.md` — I archive
+its `candidates/` and `figures/` output into a numbered `Run N/` folder (`Run N
 Generation/`, `Run N Figures/`, `Run N.md` summarizing what changed and any real
-validation results) so multiple generation runs can be compared side by side. See
-`Run 1/`, `Run 2/`, `Run 3/` for the archived runs to date.
+validation results), so I can compare generation runs side by side. See `Run 1/`,
+`Run 2/`, `Run 3/` for the archived runs so far.
 
 ## Docking + IC50 selectivity gate
 
 The GA uses a **docking-score-based isoform selectivity** system:
 
 1. **Docking gate (hard, defines a qualifying hit):** HDAC8 predicted docking must be
-   **≤ -7** (strong on-target binding, and not below a -13 applicability-domain floor);
-   HDAC1 and HDAC6 predicted docking must each be **> -7** (weak off-target binding). This
-   is a clean directional threshold per isoform, replacing the earlier ±1.5 tolerance band.
+   **≤ -7** (strong on-target binding, and not below a -13 applicability-domain floor),
+   while HDAC1 and HDAC6 predicted docking must each be **> -7** (weak off-target
+   binding). 
 
-2. **IC50 selectivity (reported + preferred, not a hard hit gate):** off-target predicted
-   IC50 ≥ 1000 nM and HDAC8 ≥ 0.7 log more potent than each off-target sets a
-   `passes_ic50_selectivity` flag. It is **not** a hard gate — as a hard gate it collapsed
-   yield to ~1 hit/lineage, because HDAC8's own median training IC50 is ~920 nM. Instead the
-   existing `selectivity` Pareto objective pushes the search toward IC50-selective molecules,
-   and the flag is enforced only where a fully-selective subset is wanted.
+2. **IC50 selectivity (reported and preferred, but not a hard hit gate):** off-target
+   predicted IC50 ≥ 1000 nM and HDAC8 ≥ 0.7 log more potent than each off-target sets a
+   `passes_ic50_selectivity` flag. I tried making this a hard gate and it collapsed
+   yield down to about 1 hit per lineage, since HDAC8's own median training IC50 is
+   ~920 nM to begin with. So instead the `selectivity` Pareto objective pushes the
+   search toward IC50-selective molecules, and the flag itself is only enforced only when a
+   fully-selective subset is  wanted.
 
 3. **Pareto objective:** `docking_selectivity = min(dock_HDAC1, dock_HDAC6) - dock_HDAC8`
-   is maximized alongside pIC50, HDAC8 docking, liability score, and IC50-based selectivity.
+   is maximized alongside pIC50, HDAC8 docking, liability score, and IC50-based
+   selectivity.
 
-The docking gate is deliberately not a hard rejection *inside* the GA loop — that would
-freeze lineages whose seeds start outside the target region (confirmed bug, found and fixed).
-It gates only what counts as a returned hit; the Pareto objective drives the population toward
-selectivity across generations.
+The docking gate is deliberately *not* a hard rejection inside the GA loop itself —
+that would freeze out any lineage whose seeds start outside the target region (this was
+a real bug I found and fixed). It only gates what counts as a returned hit; the Pareto
+objective is what actually drives the population toward selectivity across generations.
 
 ## ZBG whitelist (safety-audited)
 
@@ -97,16 +99,10 @@ selectivity across generations.
 - `data/hdac1_dock_clean.csv` / `data/hdac6_dock_clean.csv` — 946 / 1,003 off-target docking
 
 Model performance (scaffold-grouped CV R²): HDAC8 IC50 0.54, HDAC8 docking 0.43, HDAC1
-IC50 0.51, HDAC6 IC50 0.50. HDAC1/HDAC6 docking models are modest (0.13/0.15) due to
-small training sets with high scaffold diversity — treat as directional, not precise.
+IC50 0.51, HDAC6 IC50 0.50. The HDAC1/HDAC6 docking models are weaker (0.13/0.15) — small
+training sets with a lot of scaffold diversity
 
-## Results (current run)
 
-291 total docking-gated hits across 8 of 9 ZBG lineages (Triazoloquinoline has zero
-seeds). The strict all-constraints screen (no PAINS/Brenk, Lipinski/Veber, SA ≤ 3.5,
-HDAC8 dock ≤ -7, HDAC1/HDAC6 dock > -7, IC50 ≤ 500 nM) yields **6 clean candidates**
-(5 Carboxylate, 1 Triazolopyridine). Each output CSV tracks MW, cLogP, HBD, HBA, TPSA,
-RotB, both off-target IC50/docking predictions, and the `passes_ic50_selectivity` flag.
 
 ## Output columns
 
@@ -127,16 +123,17 @@ jupyter notebook hHDAC8_docking_selective.ipynb
 The notebook has two optional switches near the top:
 
 - **`RETRAIN`** (default `False`): retrain all six models from `../data/` and rebuild
-  `../models/run_state.pkl` (a few minutes). Off by default — the shipped models are used.
-- **`REGENERATE`** (default `False`): re-run the full two-stage island GA (~25 min). Off by
-  default — the cached hit pool in `../models/docking_selective_run_state.pkl` is loaded so
-  "Run All" completes in seconds and reproduces the shipped results.
+  `../models/run_state.pkl` (a few minutes). Off by default.
+- **`REGENERATE`** (default `False`): re-run the full two-stage island GA (~25 min). Off
+  by default too — the cached hit pool in `../models/docking_selective_run_state.pkl`
+  loads instead, so "Run All" finishes in seconds and reproduces the shipped results.
 
-With both `False`, the notebook loads cached models + hits, rebuilds all deliverables and
-all nine figures, and defines `predict_from_smiles()`. It reads `../models/`, imports from
-`../scripts/`, and writes to `../candidates/` and `../figures/`.
+With both left `False`, the notebook loads the cached models and hits, rebuilds all the
+deliverables and all nine figures, and defines `predict_from_smiles()`. It reads from
+`../models/`, imports from `../scripts/`, and writes out to `../candidates/` and
+`../figures/`.
 
-Retraining or regenerating from the command line instead:
+To retrain or regenerate from the command line instead:
 
 ```bash
 cd scripts
@@ -146,13 +143,5 @@ python3 make_figures.py            # regenerate ../figures from the candidate CS
 ```
 
 ## Known limitations
-
-- Docking scores are **ML-predicted** (not live Glide/Maestro). Cross-docking against
-  4BKX (HDAC1) / 5EEM (HDAC6) in Maestro and MM-GBSA rescoring recommended before
-  wet-lab prioritization.
-- HDAC1/HDAC6 docking models have modest scaffold-CV R² (0.13/0.15): small training sets
-  (946/1,003 compounds) with ~70% singleton scaffolds and a compressed score range.
-  Treat off-target docking numbers as directional, not precise.
-- None of the 6 clean candidates also clear the strict IC50-selectivity margin; that is
-  reported honestly in the `passes_ic50_selectivity` column rather than forced.
-- Triazoloquinoline has zero seeds and produced zero hits.
+- Lack of training data results in lwo R^2 values, especially for HDAC 1 & 6 docking
+- Values should be tested using software such as Maestro before in-vitro assays
