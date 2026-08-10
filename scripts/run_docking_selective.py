@@ -23,7 +23,7 @@ AD gating, precedent checks, clustering, quota-balanced export) is shared with
 the underlying ga.py/pipeline.py search machinery -- this script only wires
 those pieces together per ZBG lineage and handles export.
 """
-import pickle, time, warnings
+import os, pickle, time, warnings
 warnings.filterwarnings('ignore')
 import pandas as pd
 from rdkit import Chem, DataStructs
@@ -216,10 +216,11 @@ def main():
     hits_df['cluster_size'] = hits_df['cluster_id'].map(hits_df['cluster_id'].value_counts())
     print(f"{hits_df['cluster_id'].nunique()} structural clusters")
 
-    hits_df.to_csv('ga_candidates_RAW.csv', index=False)
+    os.makedirs('../candidates', exist_ok=True)
+    hits_df.to_csv('../candidates/ga_candidates_RAW.csv', index=False)
 
     balanced = quota_by_cell(hits_df, QUOTA_PER_CELL, ['zbg_tag', 'IC50_tier'])
-    balanced.to_csv('ga_candidates.csv', index=False)
+    balanced.to_csv('../candidates/ga_candidates.csv', index=False)
     print(f"\nPrimary deliverable (balanced by scaffold AND tier): {len(balanced)} rows")
     print(pd.crosstab(balanced['zbg_tag'], balanced['IC50_tier']))
 
@@ -233,7 +234,7 @@ def main():
                    'ic50_model_low_confidence', 'dock_model_low_confidence',
                    'pIC50_hdac1_pred', 'pIC50_hdac6_pred', 'selectivity_vs_hdac1', 'selectivity_vs_hdac6',
                    'docking_hdac1_pred', 'docking_hdac6_pred', 'docking_selectivity']
-    reps[export_cols].to_csv('top_diverse_cluster_leads.csv', index=False)
+    reps[export_cols].to_csv('../candidates/top_diverse_cluster_leads.csv', index=False)
     print(f"\nCluster reps: {len(reps)} rows")
     print(reps['zbg_tag'].value_counts())
 
@@ -262,10 +263,10 @@ def main():
     # as a column so the fully-IC50-selective subset is one filter away. Making
     # it a hard filter here zeroed the list (only ~11/291 pass IC50 selectivity,
     # and none of those also clear SA<=3.5 + no-PAINS), which is not useful.
-    final_screen.to_csv('final_screened_candidates.csv', index=False)
+    final_screen.to_csv('../candidates/final_screened_candidates.csv', index=False)
     print(f"\nFinal strict all-constraints screen: {len(final_screen)} rows")
 
-    with open('docking_selective_run_state.pkl', 'wb') as f:
+    with open('../models/docking_selective_run_state.pkl', 'wb') as f:
         pickle.dump({'hits_df': hits_df, 'balanced': balanced, 'reps': reps,
                      'final_screen': final_screen,
                      'ic50_bundle': ic50_bundle, 'dock_bundle': dock_bundle,
