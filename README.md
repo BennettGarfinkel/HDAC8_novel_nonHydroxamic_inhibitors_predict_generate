@@ -102,7 +102,10 @@ Model performance (scaffold-grouped CV R²): HDAC8 IC50 0.54, HDAC8 docking 0.43
 IC50 0.51, HDAC6 IC50 0.50. HDAC1/HDAC6 docking models are modest (0.13/0.15) due to
 small training sets with high scaffold diversity — treat as directional, not precise.
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> 3e303aeb720c55dc083dd46baf067c6500e7ea9f
 
 ## Output columns
 
