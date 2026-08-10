@@ -102,11 +102,6 @@ Model performance (scaffold-grouped CV R²): HDAC8 IC50 0.54, HDAC8 docking 0.43
 IC50 0.51, HDAC6 IC50 0.50. HDAC1/HDAC6 docking models are modest (0.13/0.15) due to
 small training sets with high scaffold diversity — treat as directional, not precise.
 
-<<<<<<< HEAD
-
-=======
->>>>>>> 3e303aeb720c55dc083dd46baf067c6500e7ea9f
-
 ## Output columns
 
 Every candidate CSV includes: `SMILES`, `zbg_tag`, `pIC50_pred`, `IC50_nM_est`,
@@ -115,7 +110,60 @@ Every candidate CSV includes: `SMILES`, `zbg_tag`, `pIC50_pred`, `IC50_nM_est`,
 `passes_ic50_selectivity`, `MW`, `cLogP`, `HBD`, `HBA`, `TPSA`, `RotB`, `sa_score`,
 `pains_brenk_flagged`, plus applicability-domain and precedent flags.
 
-## Running the notebook
+## Setup and running the notebook
+
+### 1. Folder structure
+
+The notebook navigates via `../`, so it expects this layout relative to the repo root:
+
+```
+repo-root/
+├── data/                     # required if RETRAIN=True
+│   ├── HDAC_Docking_Inhibition.csv
+│   ├── hdac1_dock_clean.csv
+│   ├── hdac1_ic50_clean.csv
+│   ├── hdac6_dock_clean.csv
+│   ├── hdac6_ic50_clean.csv
+│   ├── hdac8_dock_clean_MERGED.csv
+│   └── hdac8_ic50_clean_MERGED.csv
+├── models/                   # required if RETRAIN=False / REGENERATE=False
+│   ├── run_state.pkl
+│   └── docking_selective_run_state.pkl
+├── scripts/
+│   ├── pipeline.py
+│   ├── ga.py
+│   ├── data_prep.py
+│   ├── train_all_models.py
+│   ├── run_docking_selective.py
+│   └── make_figures.py
+├── notebooks/
+│   └── hHDAC8_docking_selective.ipynb
+├── candidates/                # create before running, not in repo
+└── figures/                   # create before running, not in repo
+```
+
+### 2. Install dependencies
+
+```bash
+pip install numpy pandas matplotlib "scikit-learn==1.8.0" rdkit jupyter ipykernel
+```
+
+Pin `scikit-learn==1.8.0`. The shipped `models/*.pkl` files were pickled under 1.8.0, and
+newer sklearn versions restructure `HistGradientBoostingRegressor`'s internal loss
+classes, which breaks `pickle.load()` on the shipped models. `sascorer` needs no separate
+install; it's pulled from RDKit's own `Contrib/SA_Score`.
+
+### 3. Create the output directories
+
+First run only:
+
+```bash
+mkdir -p candidates figures
+```
+
+Without these, the notebook crashes on the first `to_csv`/`savefig` call.
+
+### 4. Launch and run
 
 ```bash
 cd notebooks
@@ -123,17 +171,16 @@ jupyter notebook hHDAC8_docking_selective.ipynb
 # Run All
 ```
 
-The notebook has two optional switches near the top:
+The notebook has two optional switches near the top, both `False` by default:
 
-- **`RETRAIN`** (default `False`): retrain all six models from `../data/` and rebuild
-  `../models/run_state.pkl` (a few minutes). Off by default.
-- **`REGENERATE`** (default `False`): re-run the full two-stage island GA (~25 min). Off
-  by default too — the cached hit pool in `../models/docking_selective_run_state.pkl`
-  loads instead, so "Run All" finishes in seconds and reproduces the shipped results.
+- **`RETRAIN`**: retrain all six models from `../data/` and rebuild
+  `../models/run_state.pkl` (a few minutes).
+- **`REGENERATE`**: re-run the full nine-island GA (about 25 minutes).
 
-With both left `False`, the notebook loads the cached models and hits, rebuilds all the
-deliverables and all nine figures, and defines `predict_from_smiles()`. It reads from
-`../models/`, imports from `../scripts/`, and writes out to `../candidates/` and
+With both left `False`, the notebook loads the cached models and the cached GA hit pool,
+rebuilds all the deliverables and all nine figures, and defines `predict_from_smiles()`.
+The whole run finishes in under a minute and reproduces the shipped results. It reads
+from `../models/`, imports from `../scripts/`, and writes out to `../candidates/` and
 `../figures/`.
 
 To retrain or regenerate from the command line instead:
