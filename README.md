@@ -138,8 +138,8 @@ repo-root/
 │   └── make_figures.py
 ├── notebooks/
 │   └── hHDAC8_docking_selective.ipynb
-├── candidates/                # create before running, not in repo
-└── figures/                   # create before running, not in repo
+├── candidates/                # not in repo, created automatically on first run
+└── figures/                   # not in repo, created automatically on first run
 ```
 
 ### 2. Install dependencies
@@ -153,17 +153,7 @@ newer sklearn versions restructure `HistGradientBoostingRegressor`'s internal lo
 classes, which breaks `pickle.load()` on the shipped models. `sascorer` needs no separate
 install; it's pulled from RDKit's own `Contrib/SA_Score`.
 
-### 3. Create the output directories
-
-First run only:
-
-```bash
-mkdir -p candidates figures
-```
-
-Without these, the notebook crashes on the first `to_csv`/`savefig` call.
-
-### 4. Launch and run
+### 3. Launch and run
 
 ```bash
 cd notebooks
