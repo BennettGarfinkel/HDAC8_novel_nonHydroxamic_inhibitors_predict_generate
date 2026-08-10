@@ -112,7 +112,7 @@ SA_SCORE_HARD = 4.5   # hard rejected above this
 AD_FLAG_THRESHOLD = 0.35   # below this: flagged low-confidence
 AD_HARD_THRESHOLD = 0.20   # below this: hard-rejected (Task 3)
 
-IC50_NBITS = 256
+IC50_NBITS = 1024
 DOCK_NBITS = 1024
 
 
