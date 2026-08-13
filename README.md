@@ -83,13 +83,12 @@ objective is what actually drives the population toward selectivity across gener
 | 8-Hydroxyquinoline | Removed | Promiscuous non-Zn metal chelation; neurotoxicity precedent |
 | Salicylamide | Kept | Established HDAC8 ZBG |
 | Ortho-aminoanilide | Kept | Clinically precedented (entinostat/mocetinostat class) |
-| Acylurea | Kept | Current FragBreed lead chemotype |
+| Acylurea | Kept, flagged | Current FragBreed lead chemotype; ZBG mechanism unconfirmed in literature (see pipeline.py) |
 | 3-HPT | Kept, flagged | Pyrithione-adjacent risk; open SAR area |
 | Carboxylate | Added | Metabolically inert, weak/reversible chelator |
 | Trifluoromethyl-ketone | Added | Reversible hydrate-forming ZBG |
 | Cyclic-thione | Added | Generalizes 3-HPT; 72+ real examples |
-| Triazolopyridine | Added | Published non-hydroxamate HDAC8 ZBG |
-| Triazolo[4,3-a]quinoline | Added | Published non-hydroxamate HDAC8 ZBG |
+| alpha-amino-amide | Added | Whitehead 2011/Greenwood 2020 bidentate ZBG; 72 real examples |
 
 ## Data
 

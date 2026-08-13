@@ -67,6 +67,18 @@ pains_brenk_catalog = FilterCatalog.FilterCatalog(pains_brenk_params)
 ZBG_TAGS = [
     ('Salicylamide',            Chem.MolFromSmarts('[OX2H1]c1ccccc1[CX3](=O)[NX3]')),
     ('Ortho-aminoanilide',      Chem.MolFromSmarts('[NX3;H2]c1ccccc1[NX3][CX3]=O')),
+    # Acylurea: UNCONFIRMED as a genuine HDAC zinc-binding mechanism -- no direct
+    # literature validation found after a full sweep this session. It IS this
+    # project's strongest real-Glide-docking chemotype (aryl-acylurea/DKP hits
+    # scored -10.8 to -11.8 from the FragBreed library, dominates gated hits
+    # across multiple runs), but an earlier session found the Glide metal-
+    # coordination term (r_i_glide_metal) flat at -2.3 kcal/mol across top
+    # compounds -- suggesting the strong scores may reflect cap/linker shape fit
+    # rather than confirmed zinc chelation. TODO before treating any Acylurea
+    # hit as validated: manually inspect zinc-ligand contact distances/geometry
+    # on a top pose (not just total score) to check for real bidentate contact.
+    # Kept in the whitelist pending that check -- same "kept but flagged" status
+    # as 3-HPT below, not equivalent confidence to the other 6 entries.
     ('Acylurea',                Chem.MolFromSmarts('[#7][CX3](=O)[NX3][CX3](=O)')),
     # NOTE: corrected this session -- the original 'Sc1ncccc1O' pattern matches the
     # free-thiol tautomer of 3-hydroxypyridine-2-thione, which RDKit sanitizes to an
@@ -75,20 +87,41 @@ ZBG_TAGS = [
     ('3-HPT',                   Chem.MolFromSmarts('[n;H0;D3]1c(=S)c([OX2H1])ccc1')),
     ('Carboxylate',             Chem.MolFromSmarts('[CX3](=O)[OX2H1,OX1-]')),
     ('Trifluoromethyl-ketone',  Chem.MolFromSmarts('[CX3](=O)C(F)(F)F')),
-    # NEW this session
-    # coverage + a literature check confirming real HDAC8 precedent for each:
-    # - Cyclic-thione: generalizes the 3-HPT pattern to ANY ring thioamide/thione
-    #   (ring N adjacent to a ring C=S). This is a PROTECTED thione -- sulfur locked
-    #   in a C=S tautomer, not a free S-H -- confirmed as a real HDAC8 ZBG class
-    #   (imidazole-thione, PMC6009916). Free thiols remain hard-excluded below.
-    # - Triazolopyridine / Triazolo[4,3-a]quinoline: published non-hydroxamate HDAC8
-    #   ZBGs (Bandaru et al.; Nat Sci Rep 2026 triazoloquinoline paper), verified via
-    #   literature search this session, not guessed.
+    # Cyclic-thione: generalizes the 3-HPT pattern to ANY ring thioamide/thione
+    # (ring N adjacent to a ring C=S). This is a PROTECTED thione -- sulfur locked
+    # in a C=S tautomer, not a free S-H -- confirmed as a real HDAC8 ZBG class
+    # (imidazole-thione, PMC6009916). Free thiols remain hard-excluded below.
     ('Cyclic-thione',           Chem.MolFromSmarts('[#7;R][#6;R](=[SX1])')),
-    ('Triazoloquinoline',       Chem.MolFromSmarts('c1ccc2c(c1)ccc1nncn12')),
-    ('Triazolopyridine',        Chem.MolFromSmarts('c1ccn2cnnc2c1')),
+    # alpha-amino-amide is the Whitehead (2011)/Greenwood (2020) bidentate ZBG
+    # (free NH2 + adjacent amide C=O chelate Zn), confirmed by crystal structure
+    # and MM-GBSA in Bandaru et al. Nat Sci Rep 2026. Ring-N-restricted here to
+    # match the acyl-piperazine architecture actually used in the literature and
+    # reduce false-positive matches to unrelated peptide-backbone fragments.
+    # Originally paired with Triazoloquinoline/Triazolopyridine (removed -- those
+    # SMARTS matched bare fused-ring atoms with no chelating heteroatom, confirmed
+    # cap groups not ZBGs) and briefly with Azetidinone (removed this session --
+    # no viable non-hydroxamate replacement found after testing 5 candidates).
+    # 72 HDAC8 IC50 rows in HDAC_Docking_Inhibition.csv, median 840 nM.
+    ('alpha-amino-amide',       Chem.MolFromSmarts('[NX3;H2][CX4;H1]([#6])[CX3](=O)[NX3;R]')),
 ]
 assert all(p is not None for _, p in ZBG_TAGS)
+
+# Single source of truth for lineages with too few real tier1-passing training seeds
+# to run the GA off real data alone (run_island/run_ga_pareto cap real seeds at 10
+# per lineage). Defined once here and imported by both run_docking_selective.py and
+# the docking-selective notebook, instead of being hardcoded in both places.
+# Real tier1-passing seed counts (see scripts/run_docking_selective.py run history):
+# Salicylamide=2 -- thin. Lineages NOT here (e.g. alpha-amino-amide=27,
+# Trifluoromethyl-ketone=12, Cyclic-thione=47, Carboxylate=68, Acylurea=8,
+# Ortho-aminoanilide=217) already clear or approach the 10-seed cap on real data
+# alone. 3-HPT's synthetic seed was removed -- it was added back when 3-HPT's
+# SMARTS pattern was stricter and matched ZERO real training compounds; a later
+# SMARTS correction (see ZBG_TAGS comment above) broadened the pattern and it now
+# has 26 real tier1-passing seeds, well past the cap. Azetidinone's synthetic
+# seed was removed along with the ZBG itself (no viable replacement found).
+SYNTHETIC_SEEDS = {
+    'Salicylamide': 'Oc1ccccc1C(=O)NCCN1CCN(Cc2c[nH]c3ccccc23)CC1',
+}
 
 # NEW: explicit substituted N-N hydrazide/hydrazine liability (Task 1, item 4). This is
 # broader than the carbonyl-adjacent HYDRAZIDE_LIABILITY_PATTERN below -- it catches any

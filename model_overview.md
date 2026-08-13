@@ -80,16 +80,18 @@ When the model is handed a molecule, it does the following:
   (maximized — weak off-target binding is good), off-target pIC50 (minimized
   — weak off-target potency is good).
 - This runs for 55 generations, then reseeds with the top 15 candidates for
-  another 55 generations. That's done separately for each ZBG scaffold: 9
+  another 55 generations. That's done separately for each ZBG scaffold: 8
   independent islands, one per whitelisted ZBG.
-- 3 of those 9 scaffolds (Salicylamide, 3-HPT, Triazolopyridine) don't have
-  enough real training examples, so they run off synthetic seed molecules
-  instead of real ones.
+- 1 of those 8 scaffolds (Salicylamide) doesn't have enough real training
+  examples (2 real tier1-passing seeds), so it runs largely off a synthetic
+  seed molecule instead of real ones. Every other scaffold, including 3-HPT
+  (26 real seeds) and alpha-amino-amide (27), clears the GA's 10-real-seed cap
+  on its own and doesn't get a synthetic assist.
 - The ZBG is re-checked fresh every generation, not just inherited from the
   seed. A mutation/crossover can change a molecule into a different
   chemotype than the one it started as, and this catches that instead of
   mislabeling it.
-- Once all 9 islands finish, everything gets pooled together, deliverables
+- Once all 8 islands finish, everything gets pooled together, deliverables
   get assembled (applicability-domain gating, ZBG-precedent checks,
   clustering, balanced export), and the run produces the candidate CSVs and
   the figures.

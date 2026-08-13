@@ -32,7 +32,7 @@ from rdkit.ML.Cluster import Butina
 from pipeline import (descriptors_from_mol, compute_liability_flags, passes_tier1_gates,
                        morgan_fp_bitvect, max_training_similarity, AD_HARD_THRESHOLD,
                        compute_zbg_precedent_counts, ZBG_PRECEDENT_MIN, ic50_tier,
-                       rough_2d_l_shape_proxy, ZBG_TAGS)
+                       rough_2d_l_shape_proxy, ZBG_TAGS, SYNTHETIC_SEEDS)
 from ga import run_ga_pareto, HDAC8_DOCK_MAX, OFFTARGET_DOCK_MIN, OFFTARGET_IC50_MIN_NM, MIN_SELECTIVITY_LOG
 
 CLUSTER_CUTOFF = 0.4
@@ -45,12 +45,6 @@ MAX_HITS_PER_ISLAND = 60        # lowered from 150 so 2-3 strong lineages can't 
                                  # the pool and crowd out weaker ones at export time
 QUOTA_PER_CELL = 3
 QUOTA_REPS = 4
-
-SYNTHETIC_SEEDS = {
-    'Salicylamide': 'Oc1ccccc1C(=O)NCCN1CCN(Cc2c[nH]c3ccccc23)CC1',
-    '3-HPT': 'CCN2CCN(Cc3c[nH]c4ccccc34)CC2n1c(=S)c(O)ccc1',
-    'Triazolopyridine': 'c1ccn2cnnc2c1CCN1CCN(Cc2c[nH]c3ccccc23)CC1',
-}
 ALL_LINEAGES = [name for name, _ in ZBG_TAGS]
 
 
