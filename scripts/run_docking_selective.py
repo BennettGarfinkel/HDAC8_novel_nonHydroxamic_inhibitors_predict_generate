@@ -161,7 +161,11 @@ def full_tier1_ok(smi):
 
 
 def zbg_of(smi):
-    return compute_liability_flags(Chem.MolFromSmiles(smi))['zbg_tag']
+    # None-guarded: compute_liability_flags dereferences the mol, so an unparseable
+    # SMILES raised here instead of falling out of the lineage comparisons below.
+    # Callers all compare the result against a lineage name, so None is a clean miss.
+    m = Chem.MolFromSmiles(smi)
+    return compute_liability_flags(m)['zbg_tag'] if m is not None else None
 
 
 def butina_cluster(fps, cutoff=CLUSTER_CUTOFF):
@@ -223,6 +227,39 @@ def run_island(lineage, non_hydrox_df, ic50_bundle, dock_bundle, hdac1_bundle, h
     if len(true_hits) > MAX_HITS_PER_ISLAND:
         true_hits = dict(sorted(true_hits.items(), key=lambda kv: -kv[1]['pic50'])[:MAX_HITS_PER_ISLAND])
     return true_hits
+
+
+# Column subset written to top_diverse_cluster_leads.csv. Module-level so the
+# notebook's cached-reload path writes the same columns in the same order as a
+# fresh run does.
+EXPORT_COLS = ['SMILES', 'zbg_tag', 'cluster_id', 'cluster_size', 'pIC50_pred', 'IC50_nM_est',
+               'IC50_tier', 'docking_pred', 'sa_score', 'l_shape_2d_proxy',
+               'MW', 'cLogP', 'HBD', 'HBA', 'TPSA', 'RotB',
+               'pains_brenk_flagged', 'soft_metabolic_liability',
+               'zbg_precedent_count', 'zbg_low_precedent', 'exceeds_real_precedent',
+               'ic50_model_low_confidence', 'dock_model_low_confidence',
+               'pIC50_hdac1_pred', 'pIC50_hdac6_pred', 'selectivity_vs_hdac1', 'selectivity_vs_hdac6',
+               'docking_hdac1_pred', 'docking_hdac6_pred', 'docking_selectivity',
+               'periphery_touched']
+
+
+def write_candidate_csvs(hits_df, balanced, reps, final_screen, output_dir):
+    """Write the four CSV deliverables for one mode into output_dir.
+
+    Called at the end of assemble_and_export after a fresh run, and by the
+    notebook when it reloads a mode's dataframes from the run-state pickle
+    instead of re-running the GA. Keeping it in one place means the file names
+    and the cluster-rep column subset cannot drift between those two paths.
+
+    EXPORT_COLS is intersected with what reps actually has rather than indexed
+    directly, so dataframes pickled before a column was added (periphery_touched,
+    for one) still export instead of raising KeyError."""
+    os.makedirs(output_dir, exist_ok=True)
+    hits_df.to_csv(f'{output_dir}/ga_candidates_RAW.csv', index=False)
+    balanced.to_csv(f'{output_dir}/ga_candidates.csv', index=False)
+    reps[[c for c in EXPORT_COLS if c in reps.columns]].to_csv(
+        f'{output_dir}/top_diverse_cluster_leads.csv', index=False)
+    final_screen.to_csv(f'{output_dir}/final_screened_candidates.csv', index=False)
 
 
 def assemble_and_export(all_hits, ic50_df, non_hydrox, ic50_bundle, dock_bundle,
@@ -327,26 +364,12 @@ def assemble_and_export(all_hits, ic50_df, non_hydrox, ic50_bundle, dock_bundle,
     hits_df['cluster_size'] = hits_df['cluster_id'].map(hits_df['cluster_id'].value_counts())
     print(f"{hits_df['cluster_id'].nunique()} structural clusters")
 
-    os.makedirs(output_dir, exist_ok=True)
-    hits_df.to_csv(f'{output_dir}/ga_candidates_RAW.csv', index=False)
-
     balanced = quota_by_cell(hits_df, QUOTA_PER_CELL, ['zbg_tag', 'IC50_tier'])
-    balanced.to_csv(f'{output_dir}/ga_candidates.csv', index=False)
     print(f"\nPrimary deliverable (balanced by scaffold AND tier): {len(balanced)} rows")
     print(pd.crosstab(balanced['zbg_tag'], balanced['IC50_tier']))
 
     best_per_cluster = hits_df.loc[hits_df.groupby('cluster_id')['pIC50_pred'].idxmax()]
     reps = quota_by_cell(best_per_cluster, QUOTA_REPS, ['zbg_tag'])
-    export_cols = ['SMILES', 'zbg_tag', 'cluster_id', 'cluster_size', 'pIC50_pred', 'IC50_nM_est',
-                   'IC50_tier', 'docking_pred', 'sa_score', 'l_shape_2d_proxy',
-                   'MW', 'cLogP', 'HBD', 'HBA', 'TPSA', 'RotB',
-                   'pains_brenk_flagged', 'soft_metabolic_liability',
-                   'zbg_precedent_count', 'zbg_low_precedent', 'exceeds_real_precedent',
-                   'ic50_model_low_confidence', 'dock_model_low_confidence',
-                   'pIC50_hdac1_pred', 'pIC50_hdac6_pred', 'selectivity_vs_hdac1', 'selectivity_vs_hdac6',
-                   'docking_hdac1_pred', 'docking_hdac6_pred', 'docking_selectivity',
-                   'periphery_touched']
-    reps[export_cols].to_csv(f'{output_dir}/top_diverse_cluster_leads.csv', index=False)
     print(f"\nCluster reps: {len(reps)} rows")
     print(reps['zbg_tag'].value_counts())
 
@@ -375,8 +398,11 @@ def assemble_and_export(all_hits, ic50_df, non_hydrox, ic50_bundle, dock_bundle,
     # as a column so the fully-IC50-selective subset is one filter away. Making
     # it a hard filter here zeroed the list (only ~11/291 pass IC50 selectivity,
     # and none of those also clear SA<=3.5 + no-PAINS), which is not useful.
-    final_screen.to_csv(f'{output_dir}/final_screened_candidates.csv', index=False)
     print(f"\nFinal strict all-constraints screen: {len(final_screen)} rows")
+
+    # All four CSVs land here, after every gate has run, so a mode that empties
+    # out partway never leaves a half-written folder behind.
+    write_candidate_csvs(hits_df, balanced, reps, final_screen, output_dir)
 
     # Updates this mode's slot in the shared pickle; other modes are left as
     # they are. See the SHARED RUN-STATE PICKLE block at the top of this file
