@@ -211,10 +211,10 @@ Mode subfolders appear only for modes that have actually been run.
 ### 2. Install dependencies
 
 ```bash
-pip install numpy pandas matplotlib "scikit-learn==1.8.0" rdkit jupyter ipykernel
+pip install numpy pandas matplotlib "scikit-learn==1.9.0" rdkit jupyter ipykernel
 ```
 
-Pin `scikit-learn==1.8.0`. The shipped `models/*.pkl` files were pickled under 1.8.0, and
+Pin `scikit-learn==1.9.0`. The shipped `models/*.pkl` files were pickled under 1.9.0, and
 newer sklearn versions restructure `HistGradientBoostingRegressor`'s internal loss
 classes, which breaks `pickle.load()` on the shipped models. `sascorer` needs no separate
 install; it's pulled from RDKit's own `Contrib/SA_Score`.
