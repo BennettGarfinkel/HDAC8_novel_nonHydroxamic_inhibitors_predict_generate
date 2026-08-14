@@ -265,6 +265,10 @@ def assemble_and_export(all_hits, ic50_df, non_hydrox, ic50_bundle, dock_bundle,
                 'docking_hdac1_pred': res.get('dock_hdac1'), 'docking_hdac6_pred': res.get('dock_hdac6'),
                 'docking_selectivity': res.get('docking_selectivity'),
                 'passes_ic50_selectivity': res.get('passes_ic50_selectivity'),
+                # Tracked per-candidate in ga.py (sticky across mutation/crossover)
+                # but was being dropped here, since this row dict is an explicit
+                # field list rather than a passthrough of res.
+                'periphery_touched': res.get('periphery_touched', False),
             })
     # Checked BEFORE building the DataFrame: pd.DataFrame([]) has no columns, so
     # drop_duplicates(subset='SMILES') and sort_values('pIC50_pred') below both
@@ -340,7 +344,8 @@ def assemble_and_export(all_hits, ic50_df, non_hydrox, ic50_bundle, dock_bundle,
                    'zbg_precedent_count', 'zbg_low_precedent', 'exceeds_real_precedent',
                    'ic50_model_low_confidence', 'dock_model_low_confidence',
                    'pIC50_hdac1_pred', 'pIC50_hdac6_pred', 'selectivity_vs_hdac1', 'selectivity_vs_hdac6',
-                   'docking_hdac1_pred', 'docking_hdac6_pred', 'docking_selectivity']
+                   'docking_hdac1_pred', 'docking_hdac6_pred', 'docking_selectivity',
+                   'periphery_touched']
     reps[export_cols].to_csv(f'{output_dir}/top_diverse_cluster_leads.csv', index=False)
     print(f"\nCluster reps: {len(reps)} rows")
     print(reps['zbg_tag'].value_counts())
