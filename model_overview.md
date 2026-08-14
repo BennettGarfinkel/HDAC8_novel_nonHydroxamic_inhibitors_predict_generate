@@ -70,6 +70,18 @@ When the model is handed a molecule, it does the following:
   substituent. It never touches the ZBG itself. That's locked, so a mutation
   can't accidentally delete the one part of the molecule that actually binds
   zinc.
+- There's a second, narrower mutation available: ZBG-periphery mutation. Instead
+  of picking any free-H atom anywhere in the molecule, it picks only from atoms
+  bonded directly to a ZBG atom but not part of the ZBG itself. Those are the
+  anchor positions where the cap and linker attach to the warhead, so this
+  concentrates changes on the region that decides how the cap sits relative to
+  the zinc rather than scattering them across the whole structure. The ZBG stays
+  locked either way. If a molecule has no eligible periphery atom, it falls back
+  to normal mutation.
+- Periphery mutation is only offered to the five ZBGs that have real measured
+  HDAC8 data behind them (Ortho-aminoanilide, Carboxylate, Cyclic-thione,
+  alpha-amino-amide, 3-HPT). On a chemotype with no measured precedent there's
+  nothing to anchor the change to.
 - It also crosses compounds over to produce new ones: each parent gets split
   into a large piece and a small piece, and children are built from one
   parent's large piece plus the other parent's small piece.
@@ -98,3 +110,31 @@ When the model is handed a molecule, it does the following:
 - Compounds get split into tiers based on predicted IC50, and there's a
   60-molecule cap per island on the final pool — otherwise one or two strong
   scaffolds would flood the results and crowd out everything else.
+
+## Step 4: Run the same search three ways
+
+The whole of Step 3 runs as three separate modes, which differ only in how new
+molecules get proposed. Scoring, selection, gating, and export are identical
+across all three, so any difference in the output traces back to the search
+itself and nothing else.
+
+- **baseline** — normal mutation and crossover, no periphery mutation. This is
+  what the pipeline did before periphery mutation existed, kept so the other two
+  have something to measure against.
+- **separate_zbg** — periphery mutation only, with crossover switched off
+  entirely, and only the five eligible ZBGs searched. This isolates what
+  periphery mutation produces on its own, without crossover mixing in changes
+  from elsewhere in the molecule.
+- **integrated** — the normal search with periphery mutation blended in, used on
+  about 5% of mutation events for eligible lineages. This is the realistic
+  version: periphery changes competing directly against ordinary ones in the
+  same population.
+
+All three run back to back by default. Each one reseeds the random number
+generator before it starts, so a mode gives the same answer whether it runs
+first, last, or alone. Each writes its candidates and figures to its own
+subfolder, and its results into its own slot of a single shared run-state file,
+so nothing from one mode lands on top of another's.
+
+If a mode finds nothing that survives the gates, it says so, skips its export,
+and the run moves on to the next mode instead of stopping.

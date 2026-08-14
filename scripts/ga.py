@@ -27,6 +27,16 @@ SUBSTITUENTS_EXTENDED = [
     'S(=O)(=O)C', 'C(C)(C)C',
 ]
 
+ZBG_PERIPHERY_ELIGIBLE = [
+    'alpha-amino-amide', 'Cyclic-thione', '3-HPT', 'Ortho-aminoanilide', 'Carboxylate',
+]
+# Restricted to ZBGs with real measured HDAC8 data. Verified counts (non-hydroxamate
+# rows in hdac8_ic50_clean_MERGED.csv, tag_zbg() applied): Ortho-aminoanilide 384,
+# Carboxylate 136, Cyclic-thione 50, alpha-amino-amide 29, 3-HPT 27. Excludes
+# Acylurea (core chelation mechanism itself unconfirmed -- see pipeline.py
+# flag comment), Salicylamide and Trifluoromethyl-ketone (periphery here is
+# mostly ring substitution already covered by normal mutate()).
+
 
 def mutate(smi):
     """Mutates a random substituent-bearing atom. ZBG atoms are locked (excluded from
@@ -44,6 +54,61 @@ def mutate(smi):
     mol = Chem.RWMol(mol)
     candidates = [a.GetIdx() for a in mol.GetAtoms()
                   if a.GetTotalNumHs() > 0 and a.GetIdx() not in zbg_atom_idxs]
+    if not candidates:
+        return None
+    idx = random.choice(candidates)
+    sub_smi = random.choice(SUBSTITUENTS_EXTENDED)
+    if sub_smi == '[H]':
+        return Chem.MolToSmiles(mol)
+    sub_mol = Chem.MolFromSmiles(sub_smi)
+    if sub_mol is None:
+        return None
+    combo = Chem.RWMol(Chem.CombineMols(mol, sub_mol))
+    offset = mol.GetNumAtoms()
+    try:
+        combo.AddBond(idx, offset, Chem.BondType.SINGLE)
+        new_mol = combo.GetMol()
+        Chem.SanitizeMol(new_mol)
+        return Chem.MolToSmiles(new_mol)
+    except Exception:
+        return None
+
+
+def zbg_periphery_atoms(mol):
+    """Returns atom indices bonded to a ZBG-matched atom but NOT themselves
+    part of any ZBG_TAGS match -- the immediate anchor positions where cap/
+    linker/substituent chemistry attaches to the warhead. Deliberately
+    atoms-adjacent-to-the-match rather than a fixed bond-radius, so it stays
+    anchored to whatever the ZBG SMARTS actually captures. NOTE: for a
+    multi-atom ZBG SMARTS (e.g. alpha-amino-amide, which matches N-C-C-C(=O)-N
+    including a generic '[#6]' branch atom), that branch atom is itself part
+    of the match and therefore excluded from periphery -- periphery starts
+    one bond further out than the branch atom, not at it. Don't assume the
+    periphery lands on the atom immediately named in a SMARTS branch; verify
+    per-pattern before relying on it."""
+    zbg_atom_idxs = set()
+    for _, patt in ZBG_TAGS:
+        for match in mol.GetSubstructMatches(patt):
+            zbg_atom_idxs.update(match)
+    periphery = set()
+    for idx in zbg_atom_idxs:
+        for nbr in mol.GetAtomWithIdx(idx).GetNeighbors():
+            if nbr.GetIdx() not in zbg_atom_idxs:
+                periphery.add(nbr.GetIdx())
+    return periphery
+
+
+def mutate_zbg_periphery(smi):
+    """Like mutate(), but restricted to zbg_periphery_atoms(smi) instead of
+    every free-H atom in the molecule. Returns None if no eligible atom
+    exists -- caller falls back to mutate() in that case."""
+    mol = Chem.MolFromSmiles(smi)
+    if mol is None:
+        return None
+    periphery = zbg_periphery_atoms(mol)
+    mol = Chem.RWMol(mol)
+    candidates = [a.GetIdx() for a in mol.GetAtoms()
+                  if a.GetTotalNumHs() > 0 and a.GetIdx() in periphery]
     if not candidates:
         return None
     idx = random.choice(candidates)
@@ -382,7 +447,8 @@ def crowding_distance(pop, front):
 def run_ga_pareto(seed_smiles, ic50_bundle, dock_bundle, max_ic50_nM, max_docking_score,
                    generations=60, pop_size=100, elite_frac=0.3, protect_lineages=True,
                    hdac1_bundle=None, hdac6_bundle=None,
-                   hdac1_dock_bundle=None, hdac6_dock_bundle=None):
+                   hdac1_dock_bundle=None, hdac6_dock_bundle=None,
+                   crossover_prob=0.5, periphery_mutation_prob=0.0):
     """NSGA-II style GA. Returns (history, all_scored_final_gen, hits_meeting_both_bounds).
 
     hdac1_bundle/hdac6_bundle: real off-target IC50 model bundles. When provided,
@@ -411,7 +477,18 @@ def run_ga_pareto(seed_smiles, ic50_bundle, dock_bundle, max_ic50_nM, max_dockin
     out the others before they've had a chance to develop competitive descendants. This
     was added after a run where 5 single-ZBG synthetic seeds were used to fix a
     diversity gap, and one lineage wiped out the other 4 by generation ~15 purely from
-    elitism dynamics, not because its chemistry was actually better."""
+    elitism dynamics, not because its chemistry was actually better.
+
+    crossover_prob: probability a new individual comes from crossover rather
+    than mutation (default 0.5, matching the prior hardcoded value --
+    passing the default reproduces the exact prior code path).
+
+    periphery_mutation_prob: probability a MUTATION event (not crossover)
+    uses mutate_zbg_periphery() instead of mutate(). Default 0.0 (off).
+    Falls back to mutate() if the candidate's ZBG isn't in
+    ZBG_PERIPHERY_ELIGIBLE or periphery mutation returns None. Tracked via
+    periphery_touched (sticky across mutation/crossover, same propagation
+    pattern as `lineage`), surfaced in the result dict."""
     pic50_target = 9 - np.log10(max_ic50_nM)
 
     clean_seeds = []
@@ -430,6 +507,10 @@ def run_ga_pareto(seed_smiles, ic50_bundle, dock_bundle, max_ic50_nM, max_dockin
         m = Chem.MolFromSmiles(s)
         flags = compute_liability_flags(m)
         lineage[s] = flags['zbg_tag']
+
+    # Sticky flag: True once this candidate (or an ancestor) was produced by a
+    # ZBG-periphery mutation. Propagated the same way as `lineage`.
+    periphery_touched = {s: False for s in clean_seeds}
 
     population_smi = list(clean_seeds)
     while len(population_smi) < pop_size:
@@ -460,6 +541,7 @@ def run_ga_pareto(seed_smiles, ic50_bundle, dock_bundle, max_ic50_nM, max_dockin
                 # Floor protection now keys off res['zbg_tag'] (recomputed fresh this
                 # generation), so it protects actual chemotypes, not stale names.
                 res['lineage'] = res['zbg_tag']
+                res['periphery_touched'] = periphery_touched.get(smi, False)
                 evaluated.append(res)
                 meets_bounds = (res['pic50'] >= pic50_target) and (res['dock'] <= max_docking_score) \
                                and res.get('passes_dock_gate', True)
@@ -524,18 +606,32 @@ def run_ga_pareto(seed_smiles, ic50_bundle, dock_bundle, max_ic50_nM, max_dockin
         attempts = 0
         while len(new_pop) < pop_size and attempts < pop_size * 8:
             attempts += 1
-            if random.random() < 0.5 and len(elites) >= 2:
+            if random.random() < crossover_prob and len(elites) >= 2:
                 p1_idx, p2_idx = random.sample(range(len(elites)), 2)
                 p1, p2 = elites[p1_idx], elites[p2_idx]
                 child = crossover(p1, p2)
                 child_lineage = elite_lineages[p1_idx]  # inherits from 'core'-eligible parent 1 slot
+                touched = (periphery_touched.get(p1, False) or periphery_touched.get(p2, False)) if child else False
             else:
                 p_idx = random.randrange(len(elites))
-                child = mutate(elites[p_idx])
+                parent_smi = elites[p_idx]
+                # Order matters: `periphery_mutation_prob > 0` comes FIRST so the
+                # random.random() draw is short-circuited away entirely when the
+                # feature is off. That is what makes the default settings consume
+                # an identical RNG stream to the pre-refactor code. Do not reorder.
+                use_periphery = (periphery_mutation_prob > 0
+                                 and random.random() < periphery_mutation_prob
+                                 and elite_lineages[p_idx] in ZBG_PERIPHERY_ELIGIBLE)
+                child = mutate_zbg_periphery(parent_smi) if use_periphery else None
+                touched_this_step = child is not None
+                if child is None:
+                    child = mutate(parent_smi)
                 child_lineage = elite_lineages[p_idx]
+                touched = (touched_this_step or periphery_touched.get(parent_smi, False)) if child else False
             if child:
                 new_pop.append(child)
                 lineage[child] = child_lineage
+                periphery_touched[child] = touched
         population_smi = new_pop[:pop_size]
 
         n_front0 = len(fronts[0])

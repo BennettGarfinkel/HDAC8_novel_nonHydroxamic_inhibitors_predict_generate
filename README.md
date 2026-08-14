@@ -27,24 +27,76 @@ Cap–linker–ZBG (L-shaped) design paradigm. Key PDB structures: 1T64 (HDAC8),
 | File | Purpose |
 |---|---|
 | `scripts/pipeline.py` | ZBG whitelist + Tier-1 hard gates, liability engine, data cleaning, IC50/docking model training (`train_model_from_df` generic trainer), single/batch SMILES prediction, ZBG-precedent tracking, potency tiering, 2D L-shape proxy |
-| `scripts/ga.py` | ZBG-locked mutation/crossover, NSGA-II Pareto GA with docking-selectivity objective + threshold gate, IC50-selectivity flag, lineage-protected elite selection |
+| `scripts/ga.py` | ZBG-locked mutation/crossover, ZBG-periphery mutation, NSGA-II Pareto GA with docking-selectivity objective + threshold gate, IC50-selectivity flag, lineage-protected elite selection |
 | `scripts/data_prep.py` | Consolidates the 73k-row merged dataset into clean per-target training sets |
 | `scripts/train_all_models.py` | **Optional retrain entry point**: retrains all six models from `data/` and rebuilds `models/run_state.pkl` |
-| `scripts/run_docking_selective.py` | Generation run: reuses trained models, applies docking gate + IC50 selectivity, exports candidates |
+| `scripts/run_docking_selective.py` | Generation run: reuses trained models, applies docking gate + IC50 selectivity, runs one or more execution modes, exports candidates |
 | `scripts/make_figures.py` | Generates all nine figures from the candidate CSVs + model bundles |
 | `notebooks/hHDAC8_docking_selective.ipynb` | Full runnable notebook: (optional retrain) → load models → (optional regenerate) GA → assembly → figures → `predict_from_smiles()` |
-| `models/run_state.pkl` | Trained model bundles (HDAC8 IC50/docking, HDAC1/HDAC6 IC50/docking) + `ic50_df` |
-| `models/docking_selective_run_state.pkl` | Full state from the generation run (hits_df + all model bundles) |
-| `candidates/*.csv` | GA output: raw hits, balanced primary deliverable, cluster representatives, strict clean screen |
-| `figures/*.png` | Nine diagnostic visualizations (fig1–fig9) |
+| `models/run_state.pkl` | Trained model bundles (HDAC8 IC50/docking, HDAC1/HDAC6 IC50/docking) + `ic50_df`. Shared by every execution mode |
+| `models/docking_selective_run_state.pkl` | Generation-run results for all modes, keyed by mode name. Each slot holds `hits_df`, `balanced`, `reps`, `final_screen`, `saved_at`. No model bundles (see below) |
+| `candidates/<mode>/*.csv` | GA output per mode: raw hits, balanced primary deliverable, cluster representatives, strict clean screen |
+| `figures/<mode>/*.png` | Nine diagnostic visualizations (fig1–fig9) per mode |
 
-A fresh `run_docking_selective.py` / `make_figures.py` run always writes to top-level
-`candidates/` and `figures/` (created if they don't exist yet). Once I've reviewed a run
-— and ideally spot-checked it against real docking, like in `Run 1/Run1.md` — I archive
-its `candidates/` and `figures/` output into a numbered `Run N/` folder (`Run N
+A fresh `run_docking_selective.py` / `make_figures.py` run writes to
+`candidates/<mode>/` and `figures/<mode>/` (created if they don't exist yet), one
+subfolder per execution mode, so modes never overwrite each other. Once I've reviewed a
+run — and ideally spot-checked it against real docking, like in `Run 1/Run1.md` — I
+archive its `candidates/` and `figures/` output into a numbered `Run N/` folder (`Run N
 Generation/`, `Run N Figures/`, `Run N.md` summarizing what changed and any real
 validation results), so I can compare generation runs side by side. See `Run 1/`,
 `Run 2/`, `Run 3/` for the archived runs so far.
+
+## Execution modes
+
+The generation run has three modes, differing only in how the GA proposes new molecules.
+Everything else (Tier-1 gates, Pareto selection, docking/IC50 selectivity, AD gating,
+clustering, export) is identical across all three.
+
+| Mode | Crossover | ZBG-periphery mutation | Lineages searched |
+|---|---|---|---|
+| `baseline` | 0.5 | off | all 8 |
+| `separate_zbg` | disabled | always | the 5 in `ZBG_PERIPHERY_ELIGIBLE` |
+| `integrated` | 0.5 | 5% of mutation events | all 8, periphery only on eligible |
+
+**ZBG-periphery mutation** restricts substitution to atoms bonded to a ZBG-matched atom
+but not part of the ZBG match themselves, meaning the anchor positions where cap and
+linker chemistry attaches to the warhead. Normal `mutate()` picks any free-H atom in the
+molecule; this one targets the region that actually determines how the cap sits relative
+to the zinc. `ZBG_PERIPHERY_ELIGIBLE` is restricted to the five ZBGs with real measured
+HDAC8 data (Ortho-aminoanilide 384 rows, Carboxylate 136, Cyclic-thione 50,
+alpha-amino-amide 29, 3-HPT 27), since periphery mutation on a chemotype with no
+measured precedent has nothing to anchor to.
+
+`separate_zbg` runs periphery mutation in isolation to see what it produces on its own.
+`integrated` blends it into the normal search. `baseline` is the pre-existing behavior,
+kept so the other two have something to compare against; passing the default dial
+settings reproduces the pre-refactor RNG stream exactly.
+
+Set the switches at the top of `scripts/run_docking_selective.py`:
+
+```python
+RUN_ALL = True             # default: run all three back to back
+RUN_BASELINE = False       # only consulted when RUN_ALL is False
+RUN_SEPARATE_ZBG = False
+RUN_INTEGRATED = False
+```
+
+`RUN_ALL = True` runs all three in order. To run a subset, set `RUN_ALL = False` and turn
+on the individual switches you want. Each mode reseeds `RANDOM_SEED` before it starts, so
+any mode is reproducible on its own regardless of which others ran or in what order.
+
+Results go into one shared `models/docking_selective_run_state.pkl`, keyed by mode and
+updated in place after each mode finishes, rather than one file per mode. A mode's save
+replaces only its own slot and leaves the others alone, and the write goes through a temp
+file so an interrupted save can't destroy results from modes that already completed.
+Model bundles are deliberately not stored there: no mode retrains anything, so all six
+are identical across modes and already live in `run_state.pkl`, which is where
+`make_figures.py` reads them from. A pre-refactor pickle is migrated into the `baseline`
+slot automatically on first read.
+
+If a mode produces no surviving candidates, it prints why, skips its export and figures,
+and the run continues to the next mode rather than aborting.
 
 ## Docking + IC50 selectivity gate
 
@@ -87,8 +139,15 @@ objective is what actually drives the population toward selectivity across gener
 | 3-HPT | Kept, flagged | Pyrithione-adjacent risk; open SAR area |
 | Carboxylate | Added | Metabolically inert, weak/reversible chelator |
 | Trifluoromethyl-ketone | Added | Reversible hydrate-forming ZBG |
-| Cyclic-thione | Added | Generalizes 3-HPT; 72+ real examples |
-| alpha-amino-amide | Added | Whitehead 2011/Greenwood 2020 bidentate ZBG; 72 real examples |
+| Cyclic-thione | Added | Generalizes 3-HPT; 101 HDAC8 IC50 rows (50 unique compounds) |
+| alpha-amino-amide | Added | Whitehead 2011/Greenwood 2020 bidentate ZBG; 72 HDAC8 IC50 rows (60 unique compounds) |
+
+Counts are HDAC8 IC50 rows in `data/HDAC_Docking_Inhibition.csv`. After deduplication,
+hydroxamate removal, and measurement averaging, the cleaned training set
+(`hdac8_ic50_clean_MERGED.csv`) carries fewer per chemotype: Ortho-aminoanilide 384,
+Carboxylate 136, Cyclic-thione 50, alpha-amino-amide 29, 3-HPT 27,
+Trifluoromethyl-ketone 23, Acylurea 8, Salicylamide 6. Those cleaned numbers are what
+`ZBG_PERIPHERY_ELIGIBLE` in `ga.py` is based on.
 
 ## Data
 
@@ -138,16 +197,24 @@ repo-root/
 ├── notebooks/
 │   └── hHDAC8_docking_selective.ipynb
 ├── candidates/                # not in repo, created automatically on first run
+│   ├── baseline/
+│   ├── separate_zbg/
+│   └── integrated/
 └── figures/                   # not in repo, created automatically on first run
+    ├── baseline/
+    ├── separate_zbg/
+    └── integrated/
 ```
+
+Mode subfolders appear only for modes that have actually been run.
 
 ### 2. Install dependencies
 
 ```bash
-pip install numpy pandas matplotlib "scikit-learn==1.8.0" rdkit jupyter ipykernel
+pip install numpy pandas matplotlib "scikit-learn==1.9.0" rdkit jupyter ipykernel
 ```
 
-Pin `scikit-learn==1.8.0`. The shipped `models/*.pkl` files were pickled under 1.8.0, and
+Pin `scikit-learn==1.9.0`. The shipped `models/*.pkl` files were pickled under 1.9.0, and
 newer sklearn versions restructure `HistGradientBoostingRegressor`'s internal loss
 classes, which breaks `pickle.load()` on the shipped models. `sascorer` needs no separate
 install; it's pulled from RDKit's own `Contrib/SA_Score`.
@@ -160,26 +227,41 @@ jupyter notebook hHDAC8_docking_selective.ipynb
 # Run All
 ```
 
-The notebook has two optional switches near the top, both `False` by default:
+The notebook has three switches near the top:
 
-- **`RETRAIN`**: retrain all six models from `../data/` and rebuild
+- **`RETRAIN`** (`False`): retrain all six models from `../data/` and rebuild
   `../models/run_state.pkl` (a few minutes).
-- **`REGENERATE`**: re-run the full nine-island GA (about 25 minutes).
+- **`REGENERATE`** (`False`): re-run the full eight-island GA (about 25 minutes).
+- **`RUN_MODE`** (`None`): which execution mode's results to work with. Left as `None`,
+  it loads whichever mode was saved most recently, so running the script and then running
+  the notebook needs no edits. Set it to `'baseline'`, `'separate_zbg'`, or `'integrated'`
+  to pin one. When regenerating with `RUN_MODE = None` it defaults to `'baseline'`, since
+  there is no completed run to infer intent from.
 
-With both left `False`, the notebook loads the cached models and the cached GA hit pool,
-rebuilds all the deliverables and all nine figures, and defines `predict_from_smiles()`.
-The whole run finishes in under a minute and reproduces the shipped results. It reads
-from `../models/`, imports from `../scripts/`, and writes out to `../candidates/` and
-`../figures/`.
+With `RETRAIN` and `REGENERATE` left `False`, the notebook loads the cached models and the
+cached GA hit pool for the selected mode, rebuilds all the deliverables and all nine
+figures, and defines `predict_from_smiles()`. The whole run finishes in under a minute and
+reproduces the shipped results. It reads from `../models/`, imports from `../scripts/`,
+and writes out to `../candidates/<mode>/` and `../figures/<mode>/`.
+
+The notebook imports `load_mode_run_state` and `save_mode_run_state` from
+`run_docking_selective.py` rather than reimplementing them, so the notebook and the script
+cannot drift apart on the run-state format.
 
 To retrain or regenerate from the command line instead:
 
 ```bash
 cd scripts
 python3 train_all_models.py        # rebuild ../models/run_state.pkl from ../data
-python3 run_docking_selective.py   # re-run the GA and export candidates
-python3 make_figures.py            # regenerate ../figures from the candidate CSVs
+python3 run_docking_selective.py   # run the enabled modes, export candidates + figures
+python3 make_figures.py            # regenerate figures from candidate CSVs (defaults to
+                                   # the un-suffixed ../candidates and ../figures paths;
+                                   # pass cand_dir/fig_dir for a specific mode)
 ```
+
+`run_docking_selective.py` generates each enabled mode's figures itself, so
+`make_figures.py` only needs running standalone if you want to regenerate figures without
+re-running the GA.
 
 ## Known limitations
 - Lack of training data results in lwo R^2 values, especially for HDAC 1 & 6 docking
