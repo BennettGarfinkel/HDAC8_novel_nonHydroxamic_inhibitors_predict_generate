@@ -132,7 +132,7 @@ ZBG_TAGS = [
     # Of those 15: 14 pass the full Tier-1 suite (1 fails lipinski_veber), 0 are
     # PAINS/BRENK flagged. NOT added to ZBG_PERIPHERY_ELIGIBLE in ga.py -- 15 falls
     # short of the 27 floor the existing 5 entries were held to (lowest: 3-HPT, 27).
-    ('Acetamide',               Chem.MolFromSmarts('[CH3][CX3](=O)[NX3;H1;!$(N[OX2,OX1])]')),
+    ('Acetamide',               Chem.MolFromSmarts('[#6][CX3](=O)[NX3;H2]')),
 ]
 assert all(p is not None for _, p in ZBG_TAGS)
 
