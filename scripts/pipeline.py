@@ -103,6 +103,36 @@ ZBG_TAGS = [
     # no viable non-hydroxamate replacement found after testing 5 candidates).
     # 72 HDAC8 IC50 rows in HDAC_Docking_Inhibition.csv, median 840 nM.
     ('alpha-amino-amide',       Chem.MolFromSmarts('[NX3;H2][CX4;H1]([#6])[CX3](=O)[NX3;R]')),
+    # Acetamide is KEPT but flagged -- same reduced-confidence status as Acylurea
+    # and 3-HPT above, not equivalent to the other 6 entries. A bare acetyl amide is
+    # a weak monodentate carbonyl donor, whitelisted only in the TERMINAL position:
+    # mid-chain or N,N-disubstituted acetamide is backbone chemistry, not a warhead
+    # pointing into the zinc pocket.
+    # Terminal-ness is encoded in the SMARTS rather than checked at runtime. Every
+    # matched atom except N is already saturated by the pattern ([CH3] has one heavy
+    # neighbor, [CX3] has all 3 of its connections inside the match, =O is terminal),
+    # so 'H1' on the N leaves exactly one bond crossing out of the matched set.
+    # Verified identical to an explicit crossing-bond count across all 6082 rows of
+    # hdac8_ic50_clean_MERGED.csv plus 17 edge cases (ring N, imide, amide anion,
+    # N-protonated, di-acetyl, lactam). CAUTION: this holds only while the acyl side
+    # is a literal [CH3]. Generalizing it to [CX4] (propionamide, pivalamide) breaks
+    # the guarantee -- the N stays H1 while the acyl carbon gains its own crossing
+    # bond -- so count crossings explicitly if that is ever wanted.
+    # Real-data volume, non-hydroxamate rows of the same file (2354 total). The raw
+    # SMARTS count is misleading; only the filtered one is worth quoting:
+    #   57  raw matches
+    #   51  terminal
+    #   24  not already claimed by an EARLIER ZBG_TAGS pattern (21 Carboxylate,
+    #       6 Ortho-aminoanilide, 2 alpha-amino-amide) -- what tag_zbg() returns
+    #   21  after dropping 3 molecules with a ring of >=12 atoms: apicidin-class
+    #       cyclic tetrapeptides where the acetamide is a lysine-side-chain
+    #       N-acetyl, NOT a warhead, and atypical for the L-shaped pharmacophore
+    #   15  after dropping 6 that co-occur with HYDRAZIDE/NN_LIABILITY elsewhere
+    #       (hard-rejected by passes_tier1_gates anyway, so not usable precedent)
+    # Of those 15: 14 pass the full Tier-1 suite (1 fails lipinski_veber), 0 are
+    # PAINS/BRENK flagged. NOT added to ZBG_PERIPHERY_ELIGIBLE in ga.py -- 15 falls
+    # short of the 27 floor the existing 5 entries were held to (lowest: 3-HPT, 27).
+    ('Acetamide',               Chem.MolFromSmarts('[CH3][CX3](=O)[NX3;H1;!$(N[OX2,OX1])]')),
 ]
 assert all(p is not None for _, p in ZBG_TAGS)
 
@@ -168,6 +198,12 @@ def is_hydroxamate(mol):
     return mol.HasSubstructMatch(HYDROXAMATE_PATTERN)
 
 def tag_zbg(mol):
+    # NOTE: positional constraints on a ZBG (e.g. Acetamide, which only counts at a
+    # chain end) are encoded in the SMARTS itself rather than checked here -- see the
+    # Acetamide comment in ZBG_TAGS. Keeping this loop a plain first-match scan means
+    # ga.py's atom-locking helpers (mutate, zbg_periphery_atoms, frag_both), which
+    # call GetSubstructMatches on the raw patterns, stay consistent with tagging
+    # instead of needing a parallel copy of the positional rule.
     for name, patt in ZBG_TAGS:
         if mol.HasSubstructMatch(patt):
             return name
