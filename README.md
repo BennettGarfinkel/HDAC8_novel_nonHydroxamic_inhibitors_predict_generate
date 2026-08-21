@@ -28,7 +28,9 @@ Cap–linker–ZBG (L-shaped) design paradigm. Key PDB structures: 1T64 (HDAC8),
 |---|---|
 | `scripts/pipeline.py` | ZBG whitelist + Tier-1 hard gates, liability engine, data cleaning, IC50/docking model training (`train_model_from_df` generic trainer), single/batch SMILES prediction, ZBG-precedent tracking, potency tiering, 2D L-shape proxy |
 | `scripts/ga.py` | ZBG-locked mutation/crossover, ZBG-periphery mutation, NSGA-II Pareto GA with docking-selectivity objective + threshold gate, IC50-selectivity flag, lineage-protected elite selection |
-| `scripts/data_prep.py` | Consolidates the 73k-row merged dataset into clean per-target training sets |
+| `scripts/data_prep.py` | Builds the six per-target training CSVs from `data/HDAC_Docking_Inhibition.csv`: shared validation, censored-measurement filtering, redundant-source detection, weighted-mean aggregation, provenance report |
+| `scripts/sources.py` | Source registry: target aliases, qualifier policy per source, and the raw-download entries used only by `--rebuild-master` |
+| `scripts/parsers.py` | One small parser per format (BindingDB TSV, PubChem bioassay CSV, ChEMBL export, Glide SDF/CSV, long-format CSV). Parsers translate into the standard schema and do nothing else |
 | `scripts/train_all_models.py` | **Optional retrain entry point**: retrains all six models from `data/` and rebuilds `models/run_state.pkl` |
 | `scripts/run_docking_selective.py` | Generation run: reuses trained models, applies docking gate + IC50 selectivity, runs one or more execution modes, exports candidates |
 | `scripts/make_figures.py` | Generates all nine figures from the candidate CSVs + model bundles |
@@ -144,17 +146,51 @@ objective is what actually drives the population toward selectivity across gener
 
 Counts are HDAC8 IC50 rows in `data/HDAC_Docking_Inhibition.csv`. After deduplication,
 hydroxamate removal, and measurement averaging, the cleaned training set
-(`hdac8_ic50_clean_MERGED.csv`) carries fewer per chemotype: Ortho-aminoanilide 384,
-Carboxylate 136, Cyclic-thione 50, alpha-amino-amide 29, 3-HPT 27,
-Trifluoromethyl-ketone 23, Acylurea 8, Salicylamide 6. Those cleaned numbers are what
-`ZBG_PERIPHERY_ELIGIBLE` in `ga.py` is based on.
+(`hdac8_ic50_clean_MERGED.csv`) carries fewer per chemotype: Ortho-aminoanilide 280,
+Carboxylate 106, Cyclic-thione 51, Trifluoromethyl-ketone 35, alpha-amino-amide 28,
+3-HPT 28, Acylurea 4, Salicylamide 2. Those cleaned numbers are what
+`ZBG_PERIPHERY_ELIGIBLE` in `ga.py` is based on. They fell from the earlier
+384/136/50/29/27/23/8/6 when censored BindingDB and ChEMBL measurements stopped being
+counted as exact.
 
 ## Data
 
-- `data/HDAC_Docking_Inhibition.csv` — merged 73,467-row dataset
-- `data/hdac8_ic50_clean_MERGED.csv` — 6,082 unique HDAC8 IC50 compounds
-- `data/hdac1_ic50_clean.csv` / `data/hdac6_ic50_clean.csv` — 10,340 / 9,035 off-target IC50
+`data/HDAC_Docking_Inhibition.csv` is the only input a data build needs. It is the
+long-format master: one row per measurement, carrying `compound_name`, `smiles`,
+`target`, `activity_type`, `activity_value`, `activity_units`, `source_file` and
+`activity_qualifier`. `python data_prep.py` turns it into the six training CSVs.
+
+- `data/HDAC_Docking_Inhibition.csv` — 94,906-row master (BindingDB, PubChem, ChEMBL,
+  Glide docking runs; each row keeps its own `source_file`)
+- `data/hdac8_ic50_clean_MERGED.csv` — 6,198 unique HDAC8 IC50 compounds
+- `data/hdac1_ic50_clean.csv` / `data/hdac6_ic50_clean.csv` — 11,566 / 10,369 off-target IC50
+- `data/hdac8_dock_clean_MERGED.csv` — 11,036 HDAC8 docking scores
 - `data/hdac1_dock_clean.csv` / `data/hdac6_dock_clean.csv` — 946 / 1,003 off-target docking
+- `data/data_prep_report.md` — per-source rows read, rows dropped and why, compounds
+  contributed, and any redundant-source warnings, rewritten on every run
+- `data/data_prep_baseline.json` — recorded compound counts; the run flags drift past 1%
+
+Only exact measurements (`activity_qualifier` `=`) train a model. Censored values
+(`>`, `<`, `>=`, `<=`, `~`) are counted in the report and excluded: 13,537 of the
+master's rows are censored, and treating them as exact is what earlier builds did.
+
+Adding data means one of two things, never new aggregation code: append rows to the
+master in that schema, or drop the vendor download into a raw directory and run
+`python data_prep.py --rebuild-master --raw-dir <dir>`, which re-derives the master
+through the format parsers. Raw vendor downloads are not kept in the repo.
+
+PubChem republishes ChEMBL and BindingDB records, so one experiment arrives through
+two or three files. Rows matching on compound, target, activity type, qualifier and
+value are counted once, which drops 31,080 duplicate rows and takes mean
+`n_measurements` from about 2.5 to about 1.4. No compound is lost; only the duplicate
+count is. Repeats inside a single source are kept, since those can be genuine
+replicates. `--keep-duplicates` turns the collapse off.
+
+Redundant sources are detected separately and reported, not removed. The current run
+flags `chembl_hdac8_ic50_raw.csv` as 96.2% contained in `pubchem_bioassay_hdac8.csv`
+with a median pIC50 difference of 0.000. Its identical measurements are already
+counted once, so what remains is a judgment call about whether the file earns its
+place; 114 of its compounds appear nowhere else.
 
 Model performance (scaffold-grouped CV R²): HDAC8 IC50 0.54, HDAC8 docking 0.43, HDAC1
 IC50 0.51, HDAC6 IC50 0.50. HDAC1/HDAC6 docking models are modest (0.13/0.15) due to
@@ -177,7 +213,9 @@ The notebook navigates via `../`, so it expects this layout relative to the repo
 ```
 repo-root/
 ├── data/                     # required if RETRAIN=True
-│   ├── HDAC_Docking_Inhibition.csv
+│   ├── HDAC_Docking_Inhibition.csv   # the only input data_prep.py needs
+│   ├── data_prep_baseline.json
+│   ├── data_prep_report.md
 │   ├── hdac1_dock_clean.csv
 │   ├── hdac1_ic50_clean.csv
 │   ├── hdac6_dock_clean.csv
@@ -191,6 +229,8 @@ repo-root/
 │   ├── pipeline.py
 │   ├── ga.py
 │   ├── data_prep.py
+│   ├── sources.py
+│   ├── parsers.py
 │   ├── train_all_models.py
 │   ├── run_docking_selective.py
 │   └── make_figures.py

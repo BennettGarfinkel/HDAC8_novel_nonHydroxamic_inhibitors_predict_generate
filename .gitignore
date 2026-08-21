@@ -10,3 +10,8 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Raw vendor downloads (BindingDB/PubChem/ChEMBL exports, docking SDFs).
+# Only needed for `data_prep.py --rebuild-master`; the committed
+# data/HDAC_Docking_Inhibition.csv is what a normal run reads.
+/data/raw/
