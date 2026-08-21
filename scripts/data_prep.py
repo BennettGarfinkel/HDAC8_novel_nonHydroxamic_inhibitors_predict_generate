@@ -43,8 +43,9 @@ from rdkit import RDLogger
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import parsers
 from sources import (DATA_DIR, MASTER_FILE, MASTER_SOURCE, RAW_DIR,
-                     SUPPORTED_ACTIVITY_TYPES, VALID_QUALIFIERS, canonical_target,
-                     discover_raw_sources, target_from_filename)
+                     SUPPORTED_ACTIVITY_TYPES, TARGET_SOURCE_EXCLUSIONS,
+                     VALID_QUALIFIERS, canonical_target, discover_raw_sources,
+                     target_from_filename)
 
 RDLogger.DisableLog('rdApp.*')
 
@@ -436,7 +437,34 @@ def find_redundant_sources(frame, overlap_threshold=DEFAULT_OVERLAP_THRESHOLD,
 # --------------------------------------------------------------------------
 # Aggregation and output (shared, source-agnostic)
 # --------------------------------------------------------------------------
-def aggregate(frame, target, activity_type, value_col):
+def apply_target_source_exclusions(sub, target, activity_type, exclusion_log=None):
+    """Drop rows from sources excluded for THIS target only (TARGET_SOURCE_EXCLUSIONS).
+
+    Narrower than disabling a source in the registry: the rows stay in the master, stay
+    in the provenance report, and stay available to every other target. Applied to IC50
+    rows only -- the exclusions were validated on IC50 models, and docking must not
+    inherit them by accident if a docking source is ever added to the dict.
+    """
+    excluded = TARGET_SOURCE_EXCLUSIONS.get(target, []) if activity_type == 'IC50' else []
+    if not excluded:
+        return sub
+    mask = sub['source_file'].isin(excluded)
+    if not mask.any():
+        return sub
+    kept = sub[~mask]
+    if exclusion_log is not None:
+        before = sub['canonical_smiles'].nunique()
+        exclusion_log.append({
+            'target': target,
+            'activity_type': activity_type,
+            'sources': sorted(set(sub.loc[mask, 'source_file'])),
+            'rows_removed': int(mask.sum()),
+            'compounds_removed': int(before - kept['canonical_smiles'].nunique()),
+        })
+    return kept.copy()
+
+
+def aggregate(frame, target, activity_type, value_col, exclusion_log=None):
     """Weighted-mean aggregation across every source, weighted by n_measurements."""
     empty = pd.DataFrame(columns=['canonical_smiles', value_col, 'n_measurements'])
     if frame.empty:
@@ -444,6 +472,7 @@ def aggregate(frame, target, activity_type, value_col):
     sub = frame[(frame['target'] == target) &
                 (frame['activity_type'] == activity_type) &
                 (frame['activity_qualifier'] == USABLE_QUALIFIER)].copy()
+    sub = apply_target_source_exclusions(sub, target, activity_type, exclusion_log)
     if sub.empty:
         return empty
     sub['value'] = to_output_value(sub, activity_type)
@@ -456,14 +485,14 @@ def aggregate(frame, target, activity_type, value_col):
 
 
 def build_outputs(frame, out_dir, write=True):
-    results = {}
+    results, exclusions = {}, []
     for filename, target, activity_type, value_col in OUTPUTS:
-        agg = aggregate(frame, target, activity_type, value_col)
+        agg = aggregate(frame, target, activity_type, value_col, exclusion_log=exclusions)
         results[filename] = agg
         if write:
             os.makedirs(out_dir, exist_ok=True)
             agg.to_csv(os.path.join(out_dir, filename), index=False)
-    return results
+    return results, exclusions
 
 
 # --------------------------------------------------------------------------
@@ -500,7 +529,7 @@ def check_drift(results, baseline_path=BASELINE_FILE, update=False, tolerance=DR
             if old is None:
                 notes.append((name, None, n, 'new output, no baseline'))
                 continue
-            drift = abs(n - old) / old if old else 0.0
+            drift = (n - old) / old if old else 0.0
             notes.append((name, old, n, f'{drift:+.2%}' if n != old else 'unchanged'))
     if update or not baseline:
         with open(baseline_path, 'w') as fh:
@@ -512,7 +541,7 @@ def check_drift(results, baseline_path=BASELINE_FILE, update=False, tolerance=DR
 # Reporting
 # --------------------------------------------------------------------------
 def format_report(reports, provenance, findings, results, drift_notes,
-                  tolerance=DRIFT_TOLERANCE):
+                  exclusions=(), tolerance=DRIFT_TOLERANCE):
     lines = ['# data_prep provenance report', '']
 
     lines += ['## Inputs', '',
@@ -597,6 +626,28 @@ def format_report(reports, provenance, findings, results, drift_notes,
                              f'`{f["superset_source"]}`. Nothing was removed automatically.')
     lines.append('')
 
+    lines += ['## Target-specific source exclusions', '']
+    if not exclusions:
+        lines.append('No target-specific source exclusion applied '
+                     '(`TARGET_SOURCE_EXCLUSIONS` in sources.py is empty or '
+                     'matched nothing in this master file).')
+    else:
+        lines.append('These rows are present in the master and are counted in the '
+                     'provenance table above; they were held out of the listed '
+                     'target-and-type training set only. Every other target still '
+                     'sees them.')
+        lines.append('')
+        for ex in exclusions:
+            src = ', '.join(f'`{name}`' for name in ex['sources'])
+            lines.append(
+                f"- **{ex['target']} {ex['activity_type']}: excluded {src} per "
+                f"`TARGET_SOURCE_EXCLUSIONS`** -- {ex['rows_removed']:,} rows removed, "
+                f"{ex['compounds_removed']:,} compounds dropped from the output "
+                f"entirely (the rest keep a measurement from another source). "
+                f"See the TARGET_SOURCE_EXCLUSIONS comment in sources.py for the "
+                f"scaffold-CV evidence behind this entry.")
+    lines.append('')
+
     lines += ['## Outputs', '',
               '| file | compounds | mean n_measurements | baseline | change |',
               '|---|---|---|---|---|']
@@ -619,7 +670,7 @@ def format_report(reports, provenance, findings, results, drift_notes,
     return '\n'.join(lines)
 
 
-def print_console_summary(reports, provenance, findings, results):
+def print_console_summary(reports, provenance, findings, results, exclusions=()):
     print('\n=== inputs ===')
     for r in reports:
         status = '' if r.status == 'ok' else f'  [{r.status}]'
@@ -644,6 +695,12 @@ def print_console_summary(reports, provenance, findings, results):
                   f'{"  <-- review" if f["values_agree"] else ""}')
     else:
         print('\n=== redundancy check === no near-subset sources found')
+    if exclusions:
+        print('\n=== target-specific source exclusions ===')
+        for ex in exclusions:
+            print(f"  {ex['target']} {ex['activity_type']}: excluded "
+                  f"{', '.join(ex['sources'])}  ({ex['rows_removed']:,} rows, "
+                  f"{ex['compounds_removed']:,} compounds)")
     if results:
         print('\n=== outputs ===')
         for filename, _, _, _ in OUTPUTS:
@@ -682,13 +739,14 @@ def main(argv=None):
     deduped, duplicate_counts = ((frame, Counter()) if args.keep_duplicates
                                  else deduplicate_measurements(frame))
     provenance = provenance_breakdown(frame, duplicate_counts)
-    results = build_outputs(deduped, args.out_dir, write=not args.dry_run)
+    results, exclusions = build_outputs(deduped, args.out_dir, write=not args.dry_run)
     counts, baseline, drift_notes = check_drift(
         results, baseline_path=args.baseline, update=args.update_baseline)
 
-    print_console_summary(reports, provenance, findings, results)
+    print_console_summary(reports, provenance, findings, results, exclusions)
 
-    report_text = format_report(reports, provenance, findings, results, drift_notes)
+    report_text = format_report(reports, provenance, findings, results, drift_notes,
+                                exclusions=exclusions)
     if not args.dry_run:
         with open(args.report, 'w', encoding='utf-8') as fh:
             fh.write(report_text + '\n')

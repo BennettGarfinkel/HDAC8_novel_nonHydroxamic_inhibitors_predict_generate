@@ -32,13 +32,20 @@
 - **REDUNDANT: `chembl_hdac8_ic50_raw.csv` inside `pubchem_bioassay_hdac8.csv` (HDAC8 IC50)** -- 2,904 of 3,018 compounds (96.2%) also appear in `pubchem_bioassay_hdac8.csv` (5,692 compounds); median |delta value| 0.000.
     - The identical measurements are already counted once (see the duplicate column above), so n_measurements is not inflated by this. What is left is a judgment call: `chembl_hdac8_ic50_raw.csv` adds little beyond `pubchem_bioassay_hdac8.csv`. Nothing was removed automatically.
 
+## Target-specific source exclusions
+
+These rows are present in the master and are counted in the provenance table above; they were held out of the listed target-and-type training set only. Every other target still sees them.
+
+- **HDAC1 IC50: excluded `pubchem_bioassay_hdac1.csv` per `TARGET_SOURCE_EXCLUSIONS`** -- 6,483 rows removed, 3,167 compounds dropped from the output entirely (the rest keep a measurement from another source). See the TARGET_SOURCE_EXCLUSIONS comment in sources.py for the scaffold-CV evidence behind this entry.
+- **HDAC6 IC50: excluded `pubchem_bioassay_hdac6.csv` per `TARGET_SOURCE_EXCLUSIONS`** -- 5,394 rows removed, 2,711 compounds dropped from the output entirely (the rest keep a measurement from another source). See the TARGET_SOURCE_EXCLUSIONS comment in sources.py for the scaffold-CV evidence behind this entry.
+
 ## Outputs
 
 | file | compounds | mean n_measurements | baseline | change |
 |---|---|---|---|---|
 | hdac8_ic50_clean_MERGED.csv | 6,198 | 1.39 | 6,198 | unchanged |
-| hdac1_ic50_clean.csv | 11,566 | 1.45 | 11,566 | unchanged |
-| hdac6_ic50_clean.csv | 10,369 | 1.50 | 10,369 | unchanged |
+| hdac1_ic50_clean.csv | 8,399 | 1.23 | 8,399 | unchanged |
+| hdac6_ic50_clean.csv | 7,658 | 1.32 | 7,658 | unchanged |
 | hdac8_dock_clean_MERGED.csv | 11,036 | 1.00 | 11,036 | unchanged |
 | hdac1_dock_clean.csv | 946 | 1.00 | 946 | unchanged |
 | hdac6_dock_clean.csv | 1,003 | 1.00 | 1,003 | unchanged |

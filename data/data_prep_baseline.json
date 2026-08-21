@@ -1,8 +1,8 @@
 {
   "counts": {
     "hdac8_ic50_clean_MERGED.csv": 6198,
-    "hdac1_ic50_clean.csv": 11566,
-    "hdac6_ic50_clean.csv": 10369,
+    "hdac1_ic50_clean.csv": 8399,
+    "hdac6_ic50_clean.csv": 7658,
     "hdac8_dock_clean_MERGED.csv": 11036,
     "hdac1_dock_clean.csv": 946,
     "hdac6_dock_clean.csv": 1003
