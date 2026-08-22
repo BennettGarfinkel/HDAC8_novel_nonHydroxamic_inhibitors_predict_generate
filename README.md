@@ -319,5 +319,5 @@ python3 make_figures.py            # regenerate figures from candidate CSVs (def
 re-running the GA.
 
 ## Known limitations
-- Lack of training data results in lwo R^2 values, especially for HDAC 1 & 6 docking
+- Lack of training data results in low R^2 values, especially for HDAC 1 & 6 docking
 - Values should be tested using software such as Maestro before in-vitro assays
