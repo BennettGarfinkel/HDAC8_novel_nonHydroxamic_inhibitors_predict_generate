@@ -247,7 +247,8 @@ def train_model_from_df(df, value_col, smi_col='canonical_smiles', nbits=None,
     GroupKFold so the reported R2 is an honest generalization estimate, not a
     memorization score.
 
-    value_col: e.g. 'pIC50' for IC50 sets, 'r_i_docking_score' for docking sets.
+    value_col: e.g. 'pIC50' for IC50 sets, 'r_i_docking_score' for docking sets. It also
+        selects the boosting hyperparameters (see the comment below the feature build).
     nbits: fingerprint size; defaults to IC50_NBITS for pIC50, DOCK_NBITS otherwise.
     """
     if nbits is None:
@@ -272,18 +273,30 @@ def train_model_from_df(df, value_col, smi_col='canonical_smiles', nbits=None,
     X = np.hstack([desc, fps[:, informative_mask]])
     y = df[value_col].values
 
+    # Hyperparameters branch on the target type on purpose. Slower shrinkage with more
+    # trees and a leaf-size floor was validated by scaffold-CV to gain +0.02 to +0.05 R2
+    # on all three IC50 sets, and to LOSE R2 on the much smaller docking sets (n ~950-1000:
+    # HDAC1 dock 0.190 -> 0.173, HDAC6 dock 0.225 -> 0.209). Do not unify these back into
+    # one setting without re-running that comparison.
+    if value_col == 'pIC50':
+        hgb_params = dict(learning_rate=0.05, max_iter=300, min_samples_leaf=10,
+                          random_state=42)
+    else:
+        hgb_params = dict(max_depth=None, learning_rate=0.1, random_state=42)
+
     cv_r2 = None
     valid = df['scaffold'].notna()
     if valid.sum() > 10:
         gkf = GroupKFold(n_splits=5)
         scores = cross_val_score(
-            HistGradientBoostingRegressor(max_depth=None, learning_rate=0.1, random_state=42),
+            HistGradientBoostingRegressor(**hgb_params),
             X[valid.values], y[valid.values], cv=gkf,
             groups=df.loc[valid, 'scaffold'].values, scoring='r2', n_jobs=-1)
         cv_r2 = float(scores.mean())
         print(f"  [{label}] scaffold-CV R2 = {scores.mean():.3f} (+/- {scores.std():.3f}), n = {len(df)}")
 
-    model = HistGradientBoostingRegressor(max_depth=None, learning_rate=0.1, random_state=42)
+    # Same params as the CV above, so the bundle's cv_r2 describes the model that ships.
+    model = HistGradientBoostingRegressor(**hgb_params)
     model.fit(X, y)
     train_fps = [morgan_fp_bitvect(m, nbits=nbits) for m in mols]
     return {'model': model, 'informative_mask': informative_mask, 'train_fps': train_fps,

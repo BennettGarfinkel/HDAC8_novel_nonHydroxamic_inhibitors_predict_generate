@@ -56,6 +56,22 @@ TARGET_ALIASES = {
     # target. Those rows are dropped as target_unmapped, on purpose.
 }
 
+# Per-target source exclusions: sources present in the master file that
+# should be excluded from training for specific targets only. This is
+# narrower than disabling a RawSource entirely (which would drop it from
+# ALL targets and from --rebuild-master). Keyed by canonical target name,
+# values are source_file labels as they appear in HDAC_Docking_Inhibition.csv.
+#
+# Empirically validated (scaffold-CV R2, HistGradientBoostingRegressor,
+# 5-fold GroupKFold on Murcko scaffolds): dropping PubChem-sourced HDAC1/
+# HDAC6 IC50 rows improves R2 by +0.025 to +0.03 for those two targets.
+# HDAC8 does NOT get this exclusion -- PubChem inclusion is slightly
+# better there.
+TARGET_SOURCE_EXCLUSIONS = {
+    'HDAC1': ['pubchem_bioassay_hdac1.csv'],
+    'HDAC6': ['pubchem_bioassay_hdac6.csv'],
+}
+
 # PubChem bioassay exports carry the target as an NCBI Gene ID, not a name.
 GENE_ID_TARGETS = {
     3065: 'HDAC1',

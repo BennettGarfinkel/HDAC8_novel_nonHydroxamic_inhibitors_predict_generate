@@ -163,7 +163,7 @@ long-format master: one row per measurement, carrying `compound_name`, `smiles`,
 - `data/HDAC_Docking_Inhibition.csv` — 94,906-row master (BindingDB, PubChem, ChEMBL,
   Glide docking runs; each row keeps its own `source_file`)
 - `data/hdac8_ic50_clean_MERGED.csv` — 6,198 unique HDAC8 IC50 compounds
-- `data/hdac1_ic50_clean.csv` / `data/hdac6_ic50_clean.csv` — 11,566 / 10,369 off-target IC50
+- `data/hdac1_ic50_clean.csv` / `data/hdac6_ic50_clean.csv` — 8,399 / 7,658 off-target IC50
 - `data/hdac8_dock_clean_MERGED.csv` — 11,036 HDAC8 docking scores
 - `data/hdac1_dock_clean.csv` / `data/hdac6_dock_clean.csv` — 946 / 1,003 off-target docking
 - `data/data_prep_report.md` — per-source rows read, rows dropped and why, compounds
@@ -186,15 +186,30 @@ value are counted once, which drops 31,080 duplicate rows and takes mean
 count is. Repeats inside a single source are kept, since those can be genuine
 replicates. `--keep-duplicates` turns the collapse off.
 
+A source can also be excluded for one target without being disabled everywhere.
+`TARGET_SOURCE_EXCLUSIONS` in `sources.py` holds those per-target exclusions, and
+`data_prep.py` applies them to IC50 rows only. It currently drops
+`pubchem_bioassay_hdac1.csv` from HDAC1 IC50 (6,483 rows, 3,167 compounds) and
+`pubchem_bioassay_hdac6.csv` from HDAC6 IC50 (5,394 rows, 2,711 compounds), which is
+worth about +0.02 and +0.035 scaffold-CV R² on those two models. HDAC8 keeps its
+PubChem rows, where they help slightly. The rows stay in the master and stay in the
+provenance report; the report lists every exclusion applied on each run.
+
 Redundant sources are detected separately and reported, not removed. The current run
 flags `chembl_hdac8_ic50_raw.csv` as 96.2% contained in `pubchem_bioassay_hdac8.csv`
 with a median pIC50 difference of 0.000. Its identical measurements are already
 counted once, so what remains is a judgment call about whether the file earns its
 place; 114 of its compounds appear nowhere else.
 
-Model performance (scaffold-grouped CV R²): HDAC8 IC50 0.54, HDAC8 docking 0.43, HDAC1
-IC50 0.51, HDAC6 IC50 0.50. HDAC1/HDAC6 docking models are modest (0.13/0.15) due to
-small training sets with high scaffold diversity — treat as directional, not precise.
+Model performance (scaffold-grouped CV R², as retrained by `train_all_models.py`):
+HDAC8 IC50 0.53, HDAC8 docking 0.42, HDAC1 IC50 0.60, HDAC6 IC50 0.58. The three IC50
+models use slower-shrinkage boosting settings (`learning_rate=0.05, max_iter=300,`
+`min_samples_leaf=10`), and HDAC1/HDAC6 additionally exclude their PubChem rows via
+`TARGET_SOURCE_EXCLUSIONS`; both were validated by scaffold-CV and together account for
+about +0.02 (HDAC8) to +0.05 (HDAC6) R². HDAC1/HDAC6 docking models are modest
+(0.15/0.19) due to small training sets with high scaffold diversity — treat as
+directional, not precise; they keep the original boosting settings, which score better
+than the tuned ones at that sample size.
 
 ## Output columns
 
