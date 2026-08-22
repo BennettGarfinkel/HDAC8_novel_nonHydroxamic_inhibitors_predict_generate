@@ -456,8 +456,8 @@ def run_ga_pareto(seed_smiles, ic50_bundle, dock_bundle, max_ic50_nM, max_dockin
     itself prioritizes HDAC8-selective candidates rather than only reporting
     selectivity after the fact.
 
-    hdac1_dock_bundle/hdac6_dock_bundle: real off-target DOCKING model bundles (new
-    this session). When BOTH are provided, every evaluated candidate gets a
+    hdac1_dock_bundle/hdac6_dock_bundle: real off-target DOCKING model bundles. 
+    When BOTH are provided, every evaluated candidate gets a
     'docking_selectivity' Pareto objective (maximized: bigger gap between weak
     off-target docking and strong HDAC8 docking = better) that drives the search
     toward directional docking selectivity across generations: HDAC8 predicted

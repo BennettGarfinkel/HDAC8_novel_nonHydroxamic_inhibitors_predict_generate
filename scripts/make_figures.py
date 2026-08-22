@@ -206,6 +206,86 @@ def make_all_figures(cand_dir='../candidates', models_dir='../models', fig_dir='
     return [f'fig{i}' for i in range(1, 10)]
 
 
+# ---------------------------------------------------------------------------
+# Internal diagnostics -- NOT part of the poster/candidate figure set
+# ---------------------------------------------------------------------------
+# Everything below this line is development-only validation. It is deliberately kept
+# out of make_all_figures(), writes to its own figures/diagnostic/ folder, and must not
+# be used to justify any change to the production models, the GA, or candidate output.
+
+
+def make_ic50_parity_diagnostic(data_dir='../data', out_path='../figures/diagnostic/ic50_parity.png'):
+    """Out-of-fold predicted vs. actual pIC50 for the three IC50 models.
+
+    A visual complement to the scaffold-CV R2 numbers train_all_models.py already
+    prints: it shows WHERE the error sits rather than just how much there is. Expect
+    tight clustering near the diagonal in the mid-potency range and wider scatter at
+    both extremes, which is the known assay-noise ceiling, not a defect.
+
+    Slower than the fig1..fig9 set because it refits each model five times via
+    cross_val_predict instead of reusing the saved run_state.pkl bundles, so it is not
+    called from make_all_figures(). Run it explicitly:
+        python3 make_figures.py --diagnostic
+
+    Features come from pipeline.build_training_features() and the boosting settings from
+    pipeline.get_hgb_params('pIC50'), so this stays in step with the real training path
+    instead of carrying its own copy of either.
+    """
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from sklearn.ensemble import HistGradientBoostingRegressor
+    from sklearn.model_selection import GroupKFold, cross_val_predict
+    from sklearn.metrics import r2_score
+    from pipeline import build_training_features, get_hgb_params
+
+    targets = [
+        ('HDAC8', 'hdac8_ic50_clean_MERGED.csv', TEAL),
+        ('HDAC1', 'hdac1_ic50_clean.csv', SLATE),
+        ('HDAC6', 'hdac6_ic50_clean.csv', CORAL),
+    ]
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    for ax, (name, fname, color) in zip(axes, targets):
+        df = pd.read_csv(os.path.join(data_dir, fname))
+        X, y, groups = build_training_features(df, value_col='pIC50')
+        y_pred = cross_val_predict(
+            HistGradientBoostingRegressor(**get_hgb_params('pIC50')),
+            X, y, cv=GroupKFold(n_splits=5), groups=groups, n_jobs=-1)
+        # Pooled over every out-of-fold point (1 - SS_res/SS_tot), not an average of
+        # per-fold scores, so it will sit near but not exactly on the cross_val_score
+        # figure train_all_models.py reports.
+        r2 = r2_score(y, y_pred)
+
+        ax.scatter(y, y_pred, s=12, alpha=0.35, color=color, edgecolor='none')
+        lo = min(y.min(), y_pred.min()) - 0.25
+        hi = max(y.max(), y_pred.max()) + 0.25
+        ax.plot([lo, hi], [lo, hi], ls='--', lw=1, color=NAVY)
+        ax.set_xlim(lo, hi); ax.set_ylim(lo, hi)
+        ax.set_aspect('equal', adjustable='box')
+        ax.set_title(f'{name} IC50\nR² = {r2:.3f}  (n = {len(y):,})')
+        ax.set_xlabel('Actual pIC50')
+        ax.set_ylabel('Predicted pIC50 (out-of-fold)')
+        ax.grid(alpha=0.25)
+
+    fig.suptitle('Out-of-fold parity, scaffold-grouped 5-fold CV (internal diagnostic)',
+                 fontsize=12, y=0.99)
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+    # rect keeps the suptitle clear of the panel titles; bbox_inches='tight' keeps the
+    # equal-aspect panels from clipping their own axis labels.
+    plt.tight_layout(rect=[0, 0, 1, 0.94])
+    plt.savefig(out_path, dpi=150, bbox_inches='tight'); plt.close()
+    return out_path
+
+
 if __name__ == '__main__':
-    figs = make_all_figures()
-    print('Wrote:', figs)
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--diagnostic', action='store_true',
+                    help='build the internal IC50 parity diagnostic instead of the '
+                         'fig1..fig9 set (slow: refits the IC50 models via 5-fold CV)')
+    args = ap.parse_args()
+    if args.diagnostic:
+        print('Wrote:', make_ic50_parity_diagnostic())
+    else:
+        figs = make_all_figures()
+        print('Wrote:', figs)

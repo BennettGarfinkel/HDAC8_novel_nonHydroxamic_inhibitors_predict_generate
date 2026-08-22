@@ -11,7 +11,6 @@ Pipeline shape:
     master file  ->  format parser (translate only)  ->  shared validation  ->
     redundancy check  ->  shared weighted-mean aggregation  ->  six CSVs + report
 
-Nothing after the parser knows or cares which source a row came from.
 
 When new data arrives, regenerate the master from the original vendor downloads:
     python data_prep.py --rebuild-master --raw-dir /path/to/raw

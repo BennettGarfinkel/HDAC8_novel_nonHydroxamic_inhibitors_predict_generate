@@ -318,6 +318,13 @@ python3 make_figures.py            # regenerate figures from candidate CSVs (def
 `make_figures.py` only needs running standalone if you want to regenerate figures without
 re-running the GA.
 
+## Development diagnostics
+`python3 make_figures.py --diagnostic` writes `figures/diagnostic/ic50_parity.png`, an
+out-of-fold predicted-vs-actual pIC50 plot for the three IC50 models. It is internal
+validation only, it is not part of the figure set above, and it takes longer than the
+other figures because it refits each model through 5-fold CV instead of reusing
+`run_state.pkl`.
+
 ## Known limitations
 - Lack of training data results in low R^2 values, especially for HDAC 1 & 6 docking
 - Values should be tested using software such as Maestro before in-vitro assays

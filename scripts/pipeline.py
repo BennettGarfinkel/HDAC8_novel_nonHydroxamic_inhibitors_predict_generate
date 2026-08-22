@@ -38,12 +38,8 @@ METABOLIC_LIABILITIES_SOFT = [
 ]
 assert all(p is not None for p in METABOLIC_LIABILITIES_HARD + METABOLIC_LIABILITIES_SOFT)
 
-# NEW: N-halogen (chloramine/bromamine/iodamine) liability. Found live during this
-# session -- the fixed GA generated an N-Cl chloramine on an acylurea nitrogen as a
-# Tier-1 survivor, because mutate() can attach a halogen substituent to any atom with
-# an open valence, including ring/chain nitrogens, and nothing in the original
-# liability set screened N-halogen bonds specifically. N-Cl/N-Br bonds are reactive,
-# oxidizing, and not something you'd want in a drug candidate. Hard-rejected here.
+# N-halogen (chloramine/bromamine/iodamine) liability. 
+#Hydrazides also flagged as hard gate
 N_HALOGEN_LIABILITY_PATTERN = Chem.MolFromSmarts('[NX3]-[Cl,Br,I]')
 assert N_HALOGEN_LIABILITY_PATTERN is not None
 
@@ -52,44 +48,22 @@ pains_brenk_params.AddCatalog(FilterCatalog.FilterCatalogParams.FilterCatalogs.P
 pains_brenk_params.AddCatalog(FilterCatalog.FilterCatalogParams.FilterCatalogs.BRENK)
 pains_brenk_catalog = FilterCatalog.FilterCatalog(pains_brenk_params)
 
-# SAFETY-AUDITED WHITELIST (revised this session). Removed: Hydrazide (N-N oxidative
-# cleavage / hydrazine-release precedent, e.g. isoniazid), Thiol (free thiol oxidizes to
-# disulfide, reactive toward off-target proteins via thiol-disulfide exchange),
-# Benzisothiazolone (S-N ring-opens to a reactive electrophile; related chemistry is a
-# known contact sensitizer), 8-Hydroxyquinoline (promiscuous, non-Zn-selective metal
-# chelation; redox-active metal complexes; clioquinol-class neurotoxicity precedent).
-# Added: Carboxylate and Trifluoromethyl ketone -- both explicitly named in the
-# project's original ZBG scope but never implemented; both are metabolically inert or
-# reversible with a much better safety track record than what was removed.
-# 3-HPT is KEPT but flagged: pyrithione/thiopyridone-adjacent chemistry is a known
-# nonspecific zinc ionophore at higher exposure -- retained because it's an explicit
-# open-SAR area in the project, not because the concern doesn't apply.
 ZBG_TAGS = [
     ('Salicylamide',            Chem.MolFromSmarts('[OX2H1]c1ccccc1[CX3](=O)[NX3]')),
     ('Ortho-aminoanilide',      Chem.MolFromSmarts('[NX3;H2]c1ccccc1[NX3][CX3]=O')),
-    # Acylurea: UNCONFIRMED as a genuine HDAC zinc-binding mechanism -- no direct
-    # literature validation found after a full sweep this session. It IS this
-    # project's strongest real-Glide-docking chemotype (aryl-acylurea/DKP hits
-    # scored -10.8 to -11.8 from the FragBreed library, dominates gated hits
-    # across multiple runs), but an earlier session found the Glide metal-
-    # coordination term (r_i_glide_metal) flat at -2.3 kcal/mol across top
-    # compounds -- suggesting the strong scores may reflect cap/linker shape fit
-    # rather than confirmed zinc chelation. TODO before treating any Acylurea
+    #TODO before treating any Acylurea
     # hit as validated: manually inspect zinc-ligand contact distances/geometry
     # on a top pose (not just total score) to check for real bidentate contact.
     # Kept in the whitelist pending that check -- same "kept but flagged" status
     # as 3-HPT below, not equivalent confidence to the other 6 entries.
     ('Acylurea',                Chem.MolFromSmarts('[#7][CX3](=O)[NX3][CX3](=O)')),
-    # NOTE: corrected this session -- the original 'Sc1ncccc1O' pattern matches the
-    # free-thiol tautomer of 3-hydroxypyridine-2-thione, which RDKit sanitizes to an
-    # actual S-H (free thiol), triggering the free-thiol hard gate below. The real
-    # ZBG chemotype is the thione tautomer (ring C=S, N-H), matched here instead.
+    # The real ZBG chemotype is the thione tautomer (ring C=S, N-H), matched here instead.
     ('3-HPT',                   Chem.MolFromSmarts('[n;H0;D3]1c(=S)c([OX2H1])ccc1')),
     ('Carboxylate',             Chem.MolFromSmarts('[CX3](=O)[OX2H1,OX1-]')),
     ('Trifluoromethyl-ketone',  Chem.MolFromSmarts('[CX3](=O)C(F)(F)F')),
     # Cyclic-thione: generalizes the 3-HPT pattern to ANY ring thioamide/thione
-    # (ring N adjacent to a ring C=S). This is a PROTECTED thione -- sulfur locked
-    # in a C=S tautomer, not a free S-H -- confirmed as a real HDAC8 ZBG class
+    # (ring N adjacent to a ring C=S). This is a PROTECTED thione, with the sulfur locked
+    # in a C=S tautomer, not a free S-H. Confirmed as a real HDAC8 ZBG class
     # (imidazole-thione, PMC6009916). Free thiols remain hard-excluded below.
     ('Cyclic-thione',           Chem.MolFromSmarts('[#7;R][#6;R](=[SX1])')),
     # alpha-amino-amide is the Whitehead (2011)/Greenwood (2020) bidentate ZBG
@@ -97,46 +71,27 @@ ZBG_TAGS = [
     # and MM-GBSA in Bandaru et al. Nat Sci Rep 2026. Ring-N-restricted here to
     # match the acyl-piperazine architecture actually used in the literature and
     # reduce false-positive matches to unrelated peptide-backbone fragments.
-    # Originally paired with Triazoloquinoline/Triazolopyridine (removed -- those
+    # Originally paired with Triazoloquinoline/Triazolopyridine (removed. those
     # SMARTS matched bare fused-ring atoms with no chelating heteroatom, confirmed
-    # cap groups not ZBGs) and briefly with Azetidinone (removed this session --
-    # no viable non-hydroxamate replacement found after testing 5 candidates).
+    # cap groups not ZBGs) and briefly with Azetidinone (removed, no viable
+    # non-hydroxamate replacement found after testing 5 candidates).
     # 72 HDAC8 IC50 rows in HDAC_Docking_Inhibition.csv, median 840 nM.
     ('alpha-amino-amide',       Chem.MolFromSmarts('[NX3;H2][CX4;H1]([#6])[CX3](=O)[NX3;R]')),
 ]
 assert all(p is not None for _, p in ZBG_TAGS)
 
-# Single source of truth for lineages with too few real tier1-passing training seeds
-# to run the GA off real data alone (run_island/run_ga_pareto cap real seeds at 10
-# per lineage). Defined once here and imported by both run_docking_selective.py and
-# the docking-selective notebook, instead of being hardcoded in both places.
-# Real tier1-passing seed counts (see scripts/run_docking_selective.py run history):
-# Salicylamide=2 -- thin. Lineages NOT here (e.g. alpha-amino-amide=27,
-# Trifluoromethyl-ketone=12, Cyclic-thione=47, Carboxylate=68, Acylurea=8,
-# Ortho-aminoanilide=217) already clear or approach the 10-seed cap on real data
-# alone. 3-HPT's synthetic seed was removed -- it was added back when 3-HPT's
-# SMARTS pattern was stricter and matched ZERO real training compounds; a later
-# SMARTS correction (see ZBG_TAGS comment above) broadened the pattern and it now
-# has 26 real tier1-passing seeds, well past the cap. Azetidinone's synthetic
-# seed was removed along with the ZBG itself (no viable replacement found).
+# Synthetic seeds for lineages without much data
 SYNTHETIC_SEEDS = {
     'Salicylamide': 'Oc1ccccc1C(=O)NCCN1CCN(Cc2c[nH]c3ccccc23)CC1',
 }
 
-# NEW: explicit substituted N-N hydrazide/hydrazine liability (Task 1, item 4). This is
-# broader than the carbonyl-adjacent HYDRAZIDE_LIABILITY_PATTERN below -- it catches any
-# N-N single bond where neither N is part of an amidine/imine (=N-), substituted or not.
-# BRENK's own hydrazine alert only fires on a free terminal -NH-NH2, so it goes silent
-# the instant the GA substitutes that nitrogen, even though the N-N bond (oxidative
-# cleavage risk) is still there.
+# explicit substituted N-N hydrazide/hydrazine liability (Task 1, item 4)
 NN_LIABILITY_PATTERN = Chem.MolFromSmarts('[NX3;!$(N=*)]-[NX3;!$(N=*)]')
 assert NN_LIABILITY_PATTERN is not None
 HYDRAZIDE_LIABILITY_PATTERN = Chem.MolFromSmarts('[CX3](=O)[NX3][NX3]')
 assert HYDRAZIDE_LIABILITY_PATTERN is not None
 
-# Free thiol -- removed from the ZBG whitelist this session (oxidizes to disulfide,
-# reactive toward off-target proteins). Checked independently of ZBG tagging, see
-# passes_tier1_gates().
+# Free thiol flagged.
 FREE_THIOL_LIABILITY_PATTERN = Chem.MolFromSmarts('[#6][SX2H1]')
 assert FREE_THIOL_LIABILITY_PATTERN is not None
 
@@ -238,18 +193,33 @@ def passes_tier1_gates(mol, desc, flags):
 # ---------------------------------------------------------------------------
 # Model training
 # ---------------------------------------------------------------------------
-def train_model_from_df(df, value_col, smi_col='canonical_smiles', nbits=None,
-                         informative_min_count=15, label='model'):
-    """Generic scaffold-grouped-CV regressor trainer usable for ANY target/value
-    column (HDAC8/1/6 IC50 or docking). Returns a bundle dict: {model,
-    informative_mask, train_fps, nbits, cv_r2}. Uses HistGradientBoostingRegressor
-    (the model selected across the original per-target sweeps) and Murcko-scaffold
-    GroupKFold so the reported R2 is an honest generalization estimate, not a
-    memorization score.
+def get_hgb_params(value_col):
+    """Single source of truth for the boosting hyperparameters, keyed by target type.
 
-    value_col: e.g. 'pIC50' for IC50 sets, 'r_i_docking_score' for docking sets. It also
-        selects the boosting hyperparameters (see the comment below the feature build).
-    nbits: fingerprint size; defaults to IC50_NBITS for pIC50, DOCK_NBITS otherwise.
+    The two settings differ on purpose. Slower shrinkage with more trees and a leaf-size
+    floor was validated by scaffold-CV to gain +0.02 to +0.05 R2 on all three IC50 sets,
+    and to LOSE R2 on the much smaller docking sets (n ~950-1000: HDAC1 dock 0.190 ->
+    0.173, HDAC6 dock 0.225 -> 0.209). Do not unify these back into one setting without
+    re-running that comparison.
+
+    Anything that has to reproduce a trained model outside train_model_from_df() (e.g.
+    the out-of-fold parity diagnostic in scripts/make_figures.py) calls this instead of
+    copying the literal numbers, so retuning only ever touches one place.
+    """
+    if value_col == 'pIC50':
+        return dict(learning_rate=0.05, max_iter=300, min_samples_leaf=10,
+                    random_state=42)
+    return dict(max_depth=None, learning_rate=0.1, random_state=42)
+
+
+def _build_features(df, value_col, smi_col='canonical_smiles', nbits=None,
+                    informative_min_count=15):
+    """Feature build shared by train_model_from_df() and build_training_features().
+
+    Returns everything either caller needs: the cleaned frame, the parsed mols, the full
+    design matrix and target (deliberately NOT scaffold-filtered -- the shipped model is
+    fit on every parseable row), the per-row Murcko scaffold, and the informative-bit
+    mask. Callers that need GroupKFold-ready arrays filter on 'valid' themselves.
     """
     if nbits is None:
         nbits = IC50_NBITS if value_col == 'pIC50' else DOCK_NBITS
@@ -273,19 +243,49 @@ def train_model_from_df(df, value_col, smi_col='canonical_smiles', nbits=None,
     X = np.hstack([desc, fps[:, informative_mask]])
     y = df[value_col].values
 
-    # Hyperparameters branch on the target type on purpose. Slower shrinkage with more
-    # trees and a leaf-size floor was validated by scaffold-CV to gain +0.02 to +0.05 R2
-    # on all three IC50 sets, and to LOSE R2 on the much smaller docking sets (n ~950-1000:
-    # HDAC1 dock 0.190 -> 0.173, HDAC6 dock 0.225 -> 0.209). Do not unify these back into
-    # one setting without re-running that comparison.
-    if value_col == 'pIC50':
-        hgb_params = dict(learning_rate=0.05, max_iter=300, min_samples_leaf=10,
-                          random_state=42)
-    else:
-        hgb_params = dict(max_depth=None, learning_rate=0.1, random_state=42)
+    return {'df': df, 'mols': mols, 'X': X, 'y': y, 'nbits': nbits,
+            'informative_mask': informative_mask, 'valid': df['scaffold'].notna()}
+
+
+def build_training_features(df, value_col, smi_col='canonical_smiles', nbits=None,
+                            informative_min_count=15):
+    """Build (X, y, groups) the same way train_model_from_df() builds them for its
+    scaffold-grouped CV: Morgan fingerprints masked to informative bits, concatenated
+    onto the six physicochemical descriptors, with rows whose Murcko scaffold could not
+    be derived dropped so all three arrays line up for GroupKFold.
+
+    This exists so anything re-running CV outside the trainer (the out-of-fold parity
+    diagnostic in scripts/make_figures.py) shares one feature-building path and cannot
+    silently go stale if the fingerprint size or informative-bit threshold changes.
+    """
+    built = _build_features(df, value_col, smi_col=smi_col, nbits=nbits,
+                            informative_min_count=informative_min_count)
+    valid = built['valid'].values
+    return built['X'][valid], built['y'][valid], built['df'].loc[valid, 'scaffold'].values
+
+
+def train_model_from_df(df, value_col, smi_col='canonical_smiles', nbits=None,
+                         informative_min_count=15, label='model'):
+    """Generic scaffold-grouped-CV regressor trainer usable for ANY target/value
+    column (HDAC8/1/6 IC50 or docking). Returns a bundle dict: {model,
+    informative_mask, train_fps, nbits, cv_r2}. Uses HistGradientBoostingRegressor
+    (the model selected across the original per-target sweeps) and Murcko-scaffold
+    GroupKFold so the reported R2 is an honest generalization estimate, not a
+    memorization score.
+
+    value_col: e.g. 'pIC50' for IC50 sets, 'r_i_docking_score' for docking sets. It also
+        selects the boosting hyperparameters, via get_hgb_params().
+    nbits: fingerprint size; defaults to IC50_NBITS for pIC50, DOCK_NBITS otherwise.
+    """
+    built = _build_features(df, value_col, smi_col=smi_col, nbits=nbits,
+                            informative_min_count=informative_min_count)
+    df, mols = built['df'], built['mols']
+    X, y = built['X'], built['y']
+    nbits, informative_mask = built['nbits'], built['informative_mask']
+    hgb_params = get_hgb_params(value_col)
 
     cv_r2 = None
-    valid = df['scaffold'].notna()
+    valid = built['valid']
     if valid.sum() > 10:
         gkf = GroupKFold(n_splits=5)
         scores = cross_val_score(
@@ -308,8 +308,7 @@ def compute_zbg_precedent_counts(ic50_bundle_train_smiles):
     'model has zero/near-zero real precedent for this exact ZBG' independent of
     whole-molecule AD similarity, which can look confident purely because the cap/
     linker is familiar even when the chelating fragment itself was never seen (this
-    is exactly what happened with the 3-HPT and Salicylamide synthetic seeds --
-    checked directly this session: both score 0.4-0.55 whole-molecule similarity,
+    is exactly what happened with the 3-HPT and Salicylamide synthetic seeds: both score 0.4-0.55 whole-molecule similarity,
     'confident' by the AD_FLAG_THRESHOLD=0.35 cutoff, despite one ZBG having ZERO
     real examples anywhere in the training set and the other having exactly 1)."""
     counts = {}
